@@ -30,7 +30,23 @@
         "options": { "binaryPropertyName": "data" }
       },
       "notesInFlow": true,
-      "notes": "Replace ALEX_PROFILE_FILE_ID with your Drive file ID. Output converted to text downstream."
+      "notes": "Replace ALEX_PROFILE_FILE_ID with your Drive file ID."
+    },
+    {
+      "id": "b2x",
+      "name": "Extract Text - alex_profile",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -300],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b2r",
+      "name": "Rename - alex_profile",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -300],
+      "parameters": { "assignments": { "assignments": [{ "name": "alex_profile", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
     },
     {
       "id": "b3",
@@ -41,8 +57,24 @@
       "parameters": {
         "operation": "download",
         "fileId": { "value": "PREFERENCES_FILE_ID" },
-        "options": {}
+        "options": { "binaryPropertyName": "data" }
       }
+    },
+    {
+      "id": "b3x",
+      "name": "Extract Text - preferences",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -180],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b3r",
+      "name": "Rename - preferences",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -180],
+      "parameters": { "assignments": { "assignments": [{ "name": "preferences", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
     },
     {
       "id": "b4",
@@ -53,8 +85,24 @@
       "parameters": {
         "operation": "download",
         "fileId": { "value": "PATTERNS_FILE_ID" },
-        "options": {}
+        "options": { "binaryPropertyName": "data" }
       }
+    },
+    {
+      "id": "b4x",
+      "name": "Extract Text - patterns",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -60],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b4r",
+      "name": "Rename - patterns",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -60],
+      "parameters": { "assignments": { "assignments": [{ "name": "patterns", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
     },
     {
       "id": "b5",
@@ -65,8 +113,24 @@
       "parameters": {
         "operation": "download",
         "fileId": { "value": "MEMORY_LOG_FILE_ID" },
-        "options": {}
+        "options": { "binaryPropertyName": "data" }
       }
+    },
+    {
+      "id": "b5x",
+      "name": "Extract Text - memory_log",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, 60],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b5r",
+      "name": "Rename - memory_log",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, 60],
+      "parameters": { "assignments": { "assignments": [{ "name": "memory_log", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
     },
     {
       "id": "b6",
@@ -77,16 +141,33 @@
       "parameters": {
         "operation": "download",
         "fileId": { "value": "SOL_LEARNINGS_FILE_ID" },
-        "options": {}
+        "options": { "binaryPropertyName": "data" }
       }
+    },
+    {
+      "id": "b6x",
+      "name": "Extract Text - sol_learnings",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, 180],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b6r",
+      "name": "Rename - sol_learnings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, 180],
+      "parameters": { "assignments": { "assignments": [{ "name": "sol_learnings", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
     },
     {
       "id": "b7",
       "name": "Merge_Profile_Docs",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 3.1,
-      "position": [-1140, -60],
-      "parameters": { "numberInputs": 5 }
+      "position": [-980, -60],
+      "parameters": { "mode": "combine", "combinationMode": "mergeByPosition", "numberInputs": 5 },
+      "notes": "Combine-by-position merges the 5 single-item branches into one item carrying all 5 named fields (alex_profile, preferences, patterns, memory_log, sol_learnings)."
     },
     {
       "id": "b8",
@@ -96,7 +177,7 @@
       "position": [-900, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Pulls the trigger item (prompt/user_id/source/meta) which is item 0 from 02_Brain_Start\nconst trigger = $('02_Brain_Start').first().json;\nconst now = new Date();\n\n// In production these come from the 5 Drive read nodes merged above.\n// Placeholders shown here so the workflow runs even before Drive IDs are wired.\nconst alexProfile = $json.alex_profile || '(profile not loaded)';\nconst preferences = $json.preferences || '(preferences not loaded)';\nconst patterns = $json.patterns || '(patterns not loaded)';\nconst memoryLog = $json.memory_log || '(memory log not loaded)';\nconst solLearnings = $json.sol_learnings || '(learnings not loaded)';\n\nconst system_message = `\nDATE & TIME: ${now.toISOString()}\n\nUSER CORE PROFILE:\n${alexProfile}\n\nUSER PREFERENCES:\n${preferences}\n\nOBSERVED PATTERNS:\n${patterns}\n\nMEMORY LOG (RECENT FACTS):\n${memoryLog}\n\nSOL INTERNAL JOURNAL:\n${solLearnings}\n\nPROTOCOL:\n- You are Sol, a bilingual (English/Spanish) AI executive assistant for the business owner.\n- Use the knowledge_base tool before answering questions about internal docs, pricing, or process.\n- Use the calendar tool for anything scheduling-related. Never guess availability.\n- Use update_profile to save durable new facts about the user (not small talk).\n- Match the user's language (English/Spanish/Spanglish).\n- Keep phone/voice replies short, natural, and professional. No markdown in voice replies.\n- Never fabricate calendar events, contacts, or emails. If a tool fails, say so plainly.\n\nSource: ${trigger.source || 'unknown'}\nModeration flagged: ${trigger.meta && trigger.meta.moderation_flagged}\nRate limited: ${trigger.meta && trigger.meta.rate_limited}\n`.trim();\n\nreturn [{ json: { system_message, prompt: trigger.prompt, user_id: trigger.user_id, source: trigger.source } }];"
+        "jsCode": "// Pulls the trigger item (prompt/user_id/source/meta) which is item 0 from 02_Brain_Start\nconst trigger = $('02_Brain_Start').first().json;\nconst now = new Date();\n\n// $json here is the single merged item out of Merge_Profile_Docs, carrying all 5\n// named fields written by the Rename - * nodes. Falls back gracefully if a Drive\n// file ID hasn't been wired yet so the workflow still runs during setup.\nconst alexProfile = $json.alex_profile || '(profile not loaded)';\nconst preferences = $json.preferences || '(preferences not loaded)';\nconst patterns = $json.patterns || '(patterns not loaded)';\nconst memoryLog = $json.memory_log || '(memory log not loaded)';\nconst solLearnings = $json.sol_learnings || '(learnings not loaded)';\n\nconst system_message = `\nDATE & TIME: ${now.toISOString()}\n\nUSER CORE PROFILE:\n${alexProfile}\n\nUSER PREFERENCES:\n${preferences}\n\nOBSERVED PATTERNS:\n${patterns}\n\nMEMORY LOG (RECENT FACTS):\n${memoryLog}\n\nSOL INTERNAL JOURNAL:\n${solLearnings}\n\nPROTOCOL:\n- You are Sol, a bilingual (English/Spanish) AI executive assistant for the business owner.\n- Use the knowledge_base tool before answering questions about internal docs, pricing, or process.\n- Use the calendar tool for anything scheduling-related. Never guess availability.\n- Use update_profile to save durable new facts about the user (not small talk).\n- Match the user's language (English/Spanish/Spanglish).\n- Keep phone/voice replies short, natural, and professional. No markdown in voice replies.\n- Never fabricate calendar events, contacts, or emails. If a tool fails, say so plainly.\n\nSource: ${trigger.source || 'unknown'}\nModeration flagged: ${trigger.meta && trigger.meta.moderation_flagged}\nRate limited: ${trigger.meta && trigger.meta.rate_limited}\n`.trim();\n\nreturn [{ json: { system_message, prompt: trigger.prompt, user_id: trigger.user_id, source: trigger.source } }];"
       }
     },
     {
@@ -206,11 +287,21 @@
         { "node": "Read - sol_learnings", "type": "main", "index": 0 }
       ]]
     },
-    "Read - alex_profile": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 0 }]] },
-    "Read - preferences": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 1 }]] },
-    "Read - patterns": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 2 }]] },
-    "Read - memory_log": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 3 }]] },
-    "Read - sol_learnings": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 4 }]] },
+    "Read - alex_profile": { "main": [[{ "node": "Extract Text - alex_profile", "type": "main", "index": 0 }]] },
+    "Extract Text - alex_profile": { "main": [[{ "node": "Rename - alex_profile", "type": "main", "index": 0 }]] },
+    "Rename - alex_profile": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 0 }]] },
+    "Read - preferences": { "main": [[{ "node": "Extract Text - preferences", "type": "main", "index": 0 }]] },
+    "Extract Text - preferences": { "main": [[{ "node": "Rename - preferences", "type": "main", "index": 0 }]] },
+    "Rename - preferences": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 1 }]] },
+    "Read - patterns": { "main": [[{ "node": "Extract Text - patterns", "type": "main", "index": 0 }]] },
+    "Extract Text - patterns": { "main": [[{ "node": "Rename - patterns", "type": "main", "index": 0 }]] },
+    "Rename - patterns": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 2 }]] },
+    "Read - memory_log": { "main": [[{ "node": "Extract Text - memory_log", "type": "main", "index": 0 }]] },
+    "Extract Text - memory_log": { "main": [[{ "node": "Rename - memory_log", "type": "main", "index": 0 }]] },
+    "Rename - memory_log": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 3 }]] },
+    "Read - sol_learnings": { "main": [[{ "node": "Extract Text - sol_learnings", "type": "main", "index": 0 }]] },
+    "Extract Text - sol_learnings": { "main": [[{ "node": "Rename - sol_learnings", "type": "main", "index": 0 }]] },
+    "Rename - sol_learnings": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 4 }]] },
     "Merge_Profile_Docs": { "main": [[{ "node": "Build - System Message", "type": "main", "index": 0 }]] },
     "Build - System Message": { "main": [[{ "node": "AI - SOL YTUMA Executive", "type": "main", "index": 0 }]] },
     "Model - GPT-4o": { "ai_languageModel": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_languageModel", "index": 0 }]] },

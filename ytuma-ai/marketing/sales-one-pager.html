@@ -1,0 +1,313 @@
+<title>YTUMA AI — Operations, Automated</title>
+<style>
+  :root{
+    --bg: #EFEDE3;
+    --bg-panel: #E6E3D6;
+    --ink: #1A1D19;
+    --ink-soft: #52564C;
+    --line: #C9C5B4;
+    --accent: #B4791E;
+    --accent-ink: #ffffff;
+    --ok: #3E7D52;
+    --warn: #B4791E;
+    --crit: #A5402E;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg: #14171A;
+      --bg-panel: #1B1F22;
+      --ink: #E8E4D8;
+      --ink-soft: #9A9A8C;
+      --line: #33372F;
+      --accent: #D89A3E;
+      --accent-ink: #14171A;
+      --ok: #5FAE79;
+      --warn: #D89A3E;
+      --crit: #D06B58;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg: #14171A; --bg-panel: #1B1F22; --ink: #E8E4D8; --ink-soft: #9A9A8C;
+    --line: #33372F; --accent: #D89A3E; --accent-ink: #14171A;
+    --ok: #5FAE79; --warn: #D89A3E; --crit: #D06B58; color-scheme: dark;
+  }
+  :root[data-theme="light"]{
+    --bg: #EFEDE3; --bg-panel: #E6E3D6; --ink: #1A1D19; --ink-soft: #52564C;
+    --line: #C9C5B4; --accent: #B4791E; --accent-ink: #ffffff;
+    --ok: #3E7D52; --warn: #B4791E; --crit: #A5402E; color-scheme: light;
+  }
+
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  a{ color: inherit; }
+
+  .wrap{ max-width: 860px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ---- status header ---- */
+  .statusbar{
+    display:flex; align-items:center; justify-content:space-between;
+    font-family: var(--mono); font-size: 12px; letter-spacing: .06em;
+    color: var(--ink-soft);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 0;
+    text-transform: uppercase;
+  }
+  .statusbar .dot-row{ display:flex; align-items:center; gap:8px; }
+  .dot{
+    width:7px; height:7px; border-radius:50%;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .dot{ animation: pulse 2.4s ease-in-out infinite; }
+  }
+  @keyframes pulse{ 0%,100%{ opacity: 1; } 50%{ opacity: .45; } }
+
+  /* ---- hero ---- */
+  .hero{ padding: 56px 0 40px; border-bottom: 1px solid var(--line); }
+  .brand{
+    font-family: var(--mono); font-size: 13px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 20px;
+  }
+  h1{
+    font-family: var(--mono);
+    font-size: clamp(28px, 4.6vw, 44px);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 20px;
+    text-wrap: balance;
+    max-width: 15ch;
+  }
+  .lede{
+    font-size: 18px; color: var(--ink-soft); max-width: 56ch; margin: 0 0 28px;
+  }
+  .cta-row{ display:flex; gap: 14px; flex-wrap: wrap; align-items:center; }
+  .btn{
+    font-family: var(--mono); font-size: 13px; letter-spacing: .03em;
+    text-decoration: none; padding: 12px 20px; border-radius: 3px;
+    display:inline-flex; align-items:center; gap:8px;
+  }
+  .btn-primary{ background: var(--accent); color: var(--accent-ink); }
+  .btn-ghost{ border: 1px solid var(--line); color: var(--ink); }
+
+  /* ---- section scaffolding ---- */
+  section{ padding: 44px 0; border-bottom: 1px solid var(--line); }
+  section:last-of-type{ border-bottom: none; }
+  .eyebrow{
+    font-family: var(--mono); font-size: 11px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-soft); margin: 0 0 12px;
+  }
+  h2{
+    font-family: var(--mono); font-size: 22px; margin: 0 0 8px; letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+  .section-lede{ color: var(--ink-soft); max-width: 60ch; margin: 0 0 28px; }
+
+  /* ---- capability grid ---- */
+  .grid{ display:grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+  @media (max-width: 620px){ .grid{ grid-template-columns: 1fr; } }
+  .card{ background: var(--bg-panel); padding: 20px 22px; }
+  .card .tag{
+    font-family: var(--mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--accent); margin: 0 0 8px;
+  }
+  .card h3{ font-size: 16px; margin: 0 0 6px; font-family: var(--sans); font-weight: 600; }
+  .card p{ margin: 0; color: var(--ink-soft); font-size: 14px; }
+
+  /* ---- process ---- */
+  .steps{ display:flex; flex-direction:column; gap: 0; counter-reset: step; }
+  .step{
+    display:grid; grid-template-columns: 40px 1fr; gap: 16px;
+    padding: 16px 0; border-top: 1px solid var(--line);
+  }
+  .step:first-child{ border-top: none; }
+  .step .num{
+    font-family: var(--mono); color: var(--accent); font-size: 14px; padding-top: 2px;
+  }
+  .step h3{ font-size: 15px; margin: 0 0 4px; font-family: var(--sans); font-weight: 600; }
+  .step p{ margin:0; color: var(--ink-soft); font-size: 14px; }
+
+  /* ---- pricing table ---- */
+  table{ width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td{ text-align: left; padding: 12px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th{
+    font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink-soft); font-weight: 400; border-bottom: 1px solid var(--ink-soft);
+  }
+  td.price{ font-family: var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--accent); }
+  td.tier{ font-weight: 600; }
+  .table-scroll{ overflow-x: auto; }
+
+  /* ---- differentiator callout ---- */
+  .callout{
+    background: var(--bg-panel); border: 1px solid var(--line); border-left: 3px solid var(--accent);
+    padding: 22px 24px; border-radius: 2px;
+  }
+  .callout .eyebrow{ margin-bottom: 6px; }
+  .callout p{ margin: 0; color: var(--ink); }
+  .callout code{
+    font-family: var(--mono); font-size: 12.5px; background: color-mix(in srgb, var(--accent) 14%, transparent);
+    padding: 1px 5px; border-radius: 2px;
+  }
+
+  /* ---- footer ---- */
+  footer{ padding: 44px 0 0; }
+  .prompt{
+    font-family: var(--mono); font-size: 15px; display:flex; align-items:center; gap: 10px; margin-bottom: 18px;
+  }
+  .prompt .caret{ color: var(--accent); }
+  footer .meta{ font-family: var(--mono); font-size: 11px; color: var(--ink-soft); letter-spacing: .04em; }
+</style>
+
+<div class="wrap">
+
+  <div class="statusbar">
+    <div class="dot-row"><span class="dot"></span> SYSTEM: YTUMA AI · STATUS: OPERATIONAL</div>
+    <div>UPTIME 24/7 · CHANNELS: TELEGRAM · PHONE · EMAIL</div>
+  </div>
+
+  <div class="hero">
+    <p class="brand">YTUMA AI</p>
+    <h1>Your business, answered.</h1>
+    <p class="lede">
+      One AI operator that books your calendar, drafts and sends your emails, answers your phone,
+      and remembers every client — and tells you the moment anything actually needs your attention.
+    </p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="#pricing">→ See pricing</a>
+      <a class="btn btn-ghost" href="#book">Book a 15-min call</a>
+    </div>
+  </div>
+
+  <section>
+    <p class="eyebrow">What it does</p>
+    <h2>Six jobs, one operator.</h2>
+    <p class="section-lede">Each capability below is a live, working piece of the system — not a mockup.</p>
+    <div class="grid">
+      <div class="card">
+        <p class="tag">Scheduling</p>
+        <h3>Calendar, handled</h3>
+        <p>Books, reschedules, and checks availability from a text or a voice note — no double-bookings.</p>
+      </div>
+      <div class="card">
+        <p class="tag">Email</p>
+        <h3>Drafts, never guesses</h3>
+        <p>Writes replies in your voice and waits for your approval before anything reaches a client.</p>
+      </div>
+      <div class="card">
+        <p class="tag">Phone</p>
+        <h3>Answers when you can't</h3>
+        <p>Picks up inbound calls, understands what's needed, replies out loud, logs the whole thing.</p>
+      </div>
+      <div class="card">
+        <p class="tag">Memory</p>
+        <h3>Never re-asks a client</h3>
+        <p>Remembers preferences, past jobs, and conversation history — English, Spanish, or both.</p>
+      </div>
+      <div class="card">
+        <p class="tag">CRM</p>
+        <h3>Every touch, logged</h3>
+        <p>One record per contact, one row per interaction — no more digging through texts to find context.</p>
+      </div>
+      <div class="card">
+        <p class="tag">Reliability</p>
+        <h3>Fails loud, not silent</h3>
+        <p>Retries intelligently, escalates only when it matters, and tells you the second something breaks.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <p class="eyebrow">How it works</p>
+    <h2>From message to done, in six steps.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <div><h3>You send a message</h3><p>Text, voice note, or phone call — whatever's fastest for you.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <div><h3>The gateway checks it</h3><p>Validated, rate-limited, and tagged by channel before it touches the AI.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <div><h3>The brain decides</h3><p>Reads your profile and history, decides whether to answer, look something up, or act.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">04</div>
+        <div><h3>Tools do the work</h3><p>Checks the real calendar, searches real documents — never fabricates an answer.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">05</div>
+        <div><h3>You approve anything outbound</h3><p>Emails and messages wait for a thumbs-up before they leave the building.</p></div>
+      </div>
+      <div class="step">
+        <div class="num">06</div>
+        <div><h3>Everything gets logged</h3><p>Contact, interaction, and outcome — all searchable, none forgotten.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="pricing">
+    <p class="eyebrow">Pricing</p>
+    <h2>Build once. Pay monthly to keep it running.</h2>
+    <p class="section-lede">A one-time build fee gets it wired to your accounts. A monthly retainer keeps it monitored, tuned, and supported.</p>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr><th>Tier</th><th>Build</th><th>Retainer /mo</th><th>Includes</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="tier">Starter</td>
+            <td class="price">$1,200–2,500</td>
+            <td class="price">$500–1,000</td>
+            <td>Email drafting, basic Telegram bot, short-term memory</td>
+          </tr>
+          <tr>
+            <td class="tier">Standard</td>
+            <td class="price">$2,500–5,500</td>
+            <td class="price">$2,000–4,000</td>
+            <td>+ Full follow-up automation, calendar, CRM logging, long-term memory</td>
+          </tr>
+          <tr>
+            <td class="tier">Pro</td>
+            <td class="price">$6,000+</td>
+            <td class="price">$6,000–10,000+</td>
+            <td>+ Inbound/outbound phone agent, knowledge base, full observability stack</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="callout">
+      <p class="eyebrow">Why this isn't just another automation</p>
+      <p>
+        Most no-code automations fail silently. This one watches itself: when something fails, the
+        <code>retry engine</code> decides whether to try again, how long to wait, or when to give up —
+        and the <code>error handler</code> only interrupts you when it's a real, repeating problem, not
+        every single hiccup. That's the difference between a demo and something you can trust with a
+        client's inbox.
+      </p>
+    </div>
+  </section>
+
+  <footer id="book">
+    <div class="prompt"><span class="caret">$</span> book a 15-minute call and see it built for your business →</div>
+    <div class="meta">YTUMA AI · Custom AI operations for solo operators &amp; small teams</div>
+  </footer>
+
+</div>

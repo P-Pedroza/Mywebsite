@@ -142,6 +142,11 @@ the client's own):
   since the registry itself isn't per-client.
 - `ADMIN_EMAIL` in `99_Error_Handler.json` — this stays a fixed value on purpose: it's your own
   agency-wide ops inbox, not a per-client field (see below).
+- `AGENCY_ADMIN_TELEGRAM_CHAT_ID` in `99_Error_Handler.json`'s `Notify - Admin (Telegram)` node — your own
+  personal/ops Telegram chat, deliberately separate from any client's bot. This exists because `Notify -
+  Admin` (Gmail) uses the same credential as `12_Email_Sender`'s client-facing send by default — if that
+  one Gmail account's token dies, email alerting dies with it. The Telegram path is the one that still
+  reaches you when Gmail itself is what's broken.
 - `YOUR_CLIENT_ID_HERE` / `YOUR_TEST_CLIENT_ID` in `04_Telegram.json` / `04b_Debug_Telegram_Brain.json` —
   set once per duplicated copy.
 - `+13176434814` in `08_Phone_Outbound.json` is now a fallback only; the real per-client number comes from

@@ -147,8 +147,8 @@
           { "name": "message", "value": "={{ $json.error || 'Gmail send failed' }}" },
           { "name": "error_type", "value": "EMAIL_SEND_FAILURE" },
           { "name": "client_id", "value": "={{ $('Merge - Payload + Config').item.json.client_id }}" },
-          { "name": "trace_id", "value": "={{ $('Merge - Payload + Config').item.json.trace_id }}" },
-          { "name": "attempt", "value": "={{ $('Merge - Payload + Config').item.json.attempt }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id || $('Merge - Payload + Config').item.json.trace_id }}" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
           { "name": "retry_policy", "value": "={{ $('Merge - Payload + Config').item.json.retry_policy }}" }
         ] }
       }

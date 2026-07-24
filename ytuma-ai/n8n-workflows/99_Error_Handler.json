@@ -176,7 +176,7 @@
       "typeVersion": 2,
       "position": [260, 80],
       "parameters": {
-        "conditions": { "conditions": [{ "leftValue": "={{ $json.shouldNotify }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
+        "conditions": { "conditions": [{ "leftValue": "={{ $('Triage - Escalation + Cooldown').item.json.shouldNotify }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
       }
     },
     {
@@ -189,10 +189,27 @@
         "resource": "message",
         "operation": "send",
         "sendTo": "ADMIN_EMAIL",
-        "subject": "=YTUMA [{{ $json.effective_severity.toUpperCase() }}] [{{ $json.client_id }}] {{ $json.workflow_name }} / {{ $json.node_name }}",
-        "message": "=Client: {{ $json.client_id }}\nSeverity: {{ $json.effective_severity }}\nWorkflow: {{ $json.workflow_name }}\nNode: {{ $json.node_name }}\nMessage: {{ $json.message }}\nTrace: {{ $json.trace_id }}\nRun: {{ $json.run_url }}\nHits (window): {{ $json.hit_count }}"
+        "subject": "=YTUMA [{{ $('Triage - Escalation + Cooldown').item.json.effective_severity.toUpperCase() }}] [{{ $('Triage - Escalation + Cooldown').item.json.client_id }}] {{ $('Triage - Escalation + Cooldown').item.json.workflow_name }} / {{ $('Triage - Escalation + Cooldown').item.json.node_name }}",
+        "message": "=Client: {{ $('Triage - Escalation + Cooldown').item.json.client_id }}\nSeverity: {{ $('Triage - Escalation + Cooldown').item.json.effective_severity }}\nWorkflow: {{ $('Triage - Escalation + Cooldown').item.json.workflow_name }}\nNode: {{ $('Triage - Escalation + Cooldown').item.json.node_name }}\nMessage: {{ $('Triage - Escalation + Cooldown').item.json.message }}\nTrace: {{ $('Triage - Escalation + Cooldown').item.json.trace_id }}\nRun: {{ $('Triage - Escalation + Cooldown').item.json.run_url }}\nHits (window): {{ $('Triage - Escalation + Cooldown').item.json.hit_count }}"
       },
-      "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } }
+      "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } },
+      "notes": "Uses the same Gmail credential as 12_Email_Sender's client-facing send by design (shared-credential model). That means a dead/expired Gmail token silently takes out BOTH the client email channel AND this alert - see 'Notify - Admin (Telegram)' below, which is deliberately on a different credential so alerting survives a Gmail outage."
+    },
+    {
+      "id": "e14",
+      "name": "Notify - Admin (Telegram)",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [480, 140],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "AGENCY_ADMIN_TELEGRAM_CHAT_ID",
+        "parseMode": "none",
+        "text": "=🚨 YTUMA [{{ $('Triage - Escalation + Cooldown').item.json.effective_severity.toUpperCase() }}] [{{ $('Triage - Escalation + Cooldown').item.json.client_id }}]\n{{ $('Triage - Escalation + Cooldown').item.json.workflow_name }} / {{ $('Triage - Escalation + Cooldown').item.json.node_name }}\n{{ $('Triage - Escalation + Cooldown').item.json.message }}\nTrace: {{ $('Triage - Escalation + Cooldown').item.json.trace_id }}\nHits: {{ $('Triage - Escalation + Cooldown').item.json.hit_count }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } },
+      "notes": "Deliberately independent of the Gmail credential above - if Gmail itself is what's broken (the most common real failure mode), this is the channel that still gets through. Uses YOUR own agency ops bot/chat, separate from any client's bot."
     }
   ],
   "connections": {
@@ -216,7 +233,15 @@
     },
     "Update Alert_Dedupe": { "main": [[{ "node": "Should Notify", "type": "main", "index": 0 }]] },
     "Append Alert_Dedupe": { "main": [[{ "node": "Should Notify", "type": "main", "index": 0 }]] },
-    "Should Notify": { "main": [[{ "node": "Notify - Admin", "type": "main", "index": 0 }], []] }
+    "Should Notify": {
+      "main": [
+        [
+          { "node": "Notify - Admin", "type": "main", "index": 0 },
+          { "node": "Notify - Admin (Telegram)", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    }
   },
   "pinData": {},
   "settings": { "executionOrder": "v1" }

@@ -19,8 +19,10 @@ nothing and keeps debug traffic out of production data.
 - [ ] Create every credential listed in that README
 - [ ] Create the `YTUMA_Client_Registry` sheet (schema in the n8n README) and add **one test client row** —
       every workflow below needs a valid `client_id` to run against
-- [ ] Replace `YTUMA_CLIENT_REGISTRY_SHEET_ID` in `00_Client_Registry.json` and `ADMIN_EMAIL` in
-      `99_Error_Handler.json` — these two stay hardcoded on purpose (see the n8n README)
+- [ ] Replace `YTUMA_CLIENT_REGISTRY_SHEET_ID` in `00_Client_Registry.json`, and `ADMIN_EMAIL` +
+      `AGENCY_ADMIN_TELEGRAM_CHAT_ID` in `99_Error_Handler.json` — these stay hardcoded on purpose, and the
+      Telegram one specifically should NOT be the same bot as any client's `04_Telegram` copy (see the n8n
+      README for why there are two independent alert channels)
 - [ ] Create the actual Google Sheets/Docs your test client's registry row points to, with the exact tab
       names the workflows expect: `Contacts` + `Interactions` (CRM sheet), `Sheet1` (email approvals),
       `Error_Log` + `Alert_Dedupe` (observability sheet)
@@ -84,15 +86,21 @@ that client's rejections doc instead of writing garbage to memory.
 { "workflow_name": "test", "node_name": "test_node", "severity": "high", "message": "Test error", "error_type": "TEST", "trace_id": "test-001", "client_id": "your-test-client" }
 ```
 Pass: a row appears in `Error_Log` with `client_id` populated, a row appears in `Alert_Dedupe`, and you get
-an email alert whose subject includes `[your-test-client]` (severity high should always notify on first
-occurrence). Run it 3 times in under 10 minutes with the same payload and confirm you get exactly one email
-(cooldown working), not three. Then run it once more with a **different** `client_id` and confirm it's
-treated as a brand-new incident (separate dedupe row, separate email) rather than being folded into the
-first client's count.
+**both** an email alert (subject includes `[your-test-client]`) **and** a Telegram alert on your agency ops
+bot (severity high should always notify on first occurrence). Run it 3 times in under 10 minutes with the
+same payload and confirm you get exactly one of each (cooldown working), not three. Then run it once more
+with a **different** `client_id` and confirm it's treated as a brand-new incident (separate dedupe row,
+separate alerts) rather than being folded into the first client's count. Finally, confirm the two alert
+channels really are independent: temporarily point the Gmail credential at something invalid (or just
+watch what happens during the forced-failure email test below) and confirm the Telegram alert still comes
+through even when the email one can't — that's the whole reason there are two channels instead of one.
 
 **`98_Retry_Engine`** — trigger with `{ "workflow_name": "test", "severity": "low", "attempt": 0 }` a few
 times in a row, incrementing nothing yourself — confirm `attempt` increments each call and that after 3
-calls (default `max_attempts`) it returns `action: "stop"` instead of retrying forever.
+calls (default `max_attempts`) it returns `action: "stop"` instead of retrying forever. Then chain it
+through `12_Email_Sender` directly (see the forced-failure test below) rather than only testing 98 in
+isolation — the counter has to survive being passed back and forth through 12's own retry loop, not just
+increment when 98 is called with a hand-fed `attempt` value.
 
 ## 3. Test each channel end-to-end (through the Gateway this time)
 
@@ -116,9 +124,15 @@ Now that the Brain and tools are proven, test the real entry points — this exe
 - [ ] Reply `approve <id>` → confirm the sheet row flips to `approved` and you get a confirmation message
 - [ ] Confirm `12_Email_Sender` actually sends the email and you receive it in your test inbox
 - [ ] Repeat with `cancel <id>` and `edit <id>: new body` and confirm each does what it says
-- [ ] **Force a failure**: temporarily break the Gmail credential (revoke/expire it), trigger a send, and
-      confirm it retries per `98_Retry_Engine` and eventually escalates to `99_Error_Handler` with an alert
-      — this is the single most important test since it's your core sales differentiator
+- [ ] **Force a failure**: temporarily break the Gmail credential (revoke/expire it), approve a draft, and
+      confirm it retries a bounded number of times (3 by default — watch the execution timestamps; it
+      should escalate within a few minutes, not hang) and then escalates to `99_Error_Handler`. Confirm:
+      the approvals row still shows `status: approved` (the human decision stands, independent of send
+      outcome), the Telegram confirmation says "approved, but sending failed/is retrying" instead of falsely
+      claiming success, and — since Gmail is what's broken — the **Telegram** admin alert from `99` is what
+      actually reaches you, not the email one. This whole chain (approve → send → retry → escalate → two
+      independent alert channels) is the single most important test in this guide since it's your core
+      sales differentiator: an assistant that fails loudly instead of silently.
 
 **Phone (`08` outbound, `09b` inbound) — only if you're on the Pro tier build:**
 - [ ] Outbound: POST to the `09a`/`08` webhook with a test `to_phone` (your own number) and confirm you

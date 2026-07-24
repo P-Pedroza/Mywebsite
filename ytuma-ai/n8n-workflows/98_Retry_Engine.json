@@ -84,6 +84,7 @@
           "node_name": "={{ $json.node_name }}",
           "severity": "={{ $json.severity }}",
           "message": "={{ $json.message }}",
+          "client_id": "={{ $json.client_id }}",
           "error_type": "={{ $json.error_type }}",
           "trace_id": "={{ $json.trace_id }}"
         } }

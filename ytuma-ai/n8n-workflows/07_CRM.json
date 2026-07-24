@@ -1,0 +1,139 @@
+{
+  "name": "07_YTUMA_CRM_Sheets",
+  "nodes": [
+    {
+      "id": "crm1",
+      "name": "Start - CRM Event",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1300, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "timestamp" }, { "name": "contact_phone" }, { "name": "contact_name" },
+            { "name": "contact_email" }, { "name": "contact_type" }, { "name": "channel" },
+            { "name": "direction" }, { "name": "summary" }, { "name": "full_message" },
+            { "name": "next_action" }, { "name": "stage" }, { "name": "tags" },
+            { "name": "handled_by" }, { "name": "preferred_language" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "crm2",
+      "name": "Normalize - CRM Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1080, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "timestamp", "value": "={{ $json.timestamp || $now.toISO() }}" },
+            { "name": "contact_phone", "value": "={{ $json.contact_phone || '' }}" },
+            { "name": "contact_name", "value": "={{ $json.contact_name || '' }}" },
+            { "name": "contact_email", "value": "={{ $json.contact_email || '' }}" },
+            { "name": "contact_type", "value": "={{ $json.contact_type || 'client' }}" },
+            { "name": "channel", "value": "={{ ($json.channel || '').toLowerCase() }}" },
+            { "name": "direction", "value": "={{ ($json.direction || 'inbound').toLowerCase() }}" },
+            { "name": "summary", "value": "={{ $json.summary || '' }}" },
+            { "name": "full_message", "value": "={{ $json.full_message || '' }}" },
+            { "name": "next_action", "value": "={{ $json.next_action || '' }}" },
+            { "name": "stage", "value": "={{ $json.stage || 'Lead' }}" },
+            { "name": "tags", "value": "={{ $json.tags || '' }}" },
+            { "name": "handled_by", "value": "={{ $json.handled_by || 'sol' }}" },
+            { "name": "preferred_language", "value": "={{ $json.preferred_language || 'en' }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "crm3",
+      "name": "Contacts - Upsert",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-860, -60],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "value": "YTUMA_CRM_SHEET_ID" },
+        "sheetName": { "value": "Contacts" },
+        "columns": {
+          "matchingColumns": ["contact_phone"],
+          "value": {
+            "contact_phone": "={{ $json.contact_phone }}",
+            "contact_name": "={{ $json.contact_name }}",
+            "contact_email": "={{ $json.contact_email }}",
+            "contact_type": "={{ $json.contact_type }}",
+            "first_seen": "={{ $json.timestamp }}",
+            "last_channel": "={{ $json.channel }}",
+            "last_seen": "={{ $json.timestamp }}",
+            "last_summary": "={{ $json.summary }}",
+            "stage": "={{ $json.stage }}",
+            "tags": "={{ $json.tags }}",
+            "handled_by": "={{ $json.handled_by }}",
+            "preferred_language": "={{ $json.preferred_language }}"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "crm4",
+      "name": "Interactions - Append",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-860, 100],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YTUMA_CRM_SHEET_ID" },
+        "sheetName": { "value": "Interactions" },
+        "columns": {
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "contact_phone": "={{ $json.contact_phone }}",
+            "contact_name": "={{ $json.contact_name }}",
+            "channel": "={{ $json.channel }}",
+            "direction": "={{ $json.direction }}",
+            "summary": "={{ $json.summary }}",
+            "full_message": "={{ $json.full_message }}",
+            "next_action": "={{ $json.next_action }}",
+            "handled_by": "={{ $json.handled_by }}"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "crm5",
+      "name": "Test - Sample Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1080, 260],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "contact_phone", "value": "3175552299" },
+            { "name": "contact_name", "value": "Juan Testing" },
+            { "name": "channel", "value": "sms" },
+            { "name": "direction", "value": "inbound" },
+            { "name": "summary", "value": "Testing CRM pipeline." },
+            { "name": "full_message", "value": "Testing contact details." },
+            { "name": "next_action", "value": "Follow-up tomorrow." },
+            { "name": "handled_by", "value": "sol" }
+          ]
+        }
+      },
+      "notes": "Sandbox node. Right-click -> Execute Node to inject a fake event without touching real client rows."
+    }
+  ],
+  "connections": {
+    "Start - CRM Event": { "main": [[{ "node": "Normalize - CRM Event", "type": "main", "index": 0 }]] },
+    "Normalize - CRM Event": {
+      "main": [[
+        { "node": "Contacts - Upsert", "type": "main", "index": 0 },
+        { "node": "Interactions - Append", "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

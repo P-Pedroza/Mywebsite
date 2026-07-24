@@ -1,0 +1,105 @@
+{
+  "name": "05_YTUMA_Knowledge_Base",
+  "nodes": [
+    {
+      "id": "k1",
+      "name": "Start - Drive Watcher",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [-1400, 0],
+      "parameters": {
+        "pollTimes": { "item": [{ "mode": "everyMinute" }] },
+        "triggerOn": "specificFolder",
+        "folderToWatch": { "value": "YTUMA_KNOWLEDGE_BASE_FOLDER_ID" },
+        "event": "fileCreated"
+      },
+      "credentials": { "googleDriveOAuth2Api": { "id": "GOOGLE_DRIVE_OAUTH", "name": "Google Drive account" } }
+    },
+    {
+      "id": "k2",
+      "name": "Filter + Classify File",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1180, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const mimeType = $json.mimeType || '';\nconst name = $json.name || '';\nlet allowed = true;\nlet doc_type = 'text';\nlet export_mime_type = null;\n\nif (mimeType === 'application/vnd.google-apps.document') {\n  doc_type = 'doc';\n  export_mime_type = 'text/plain';\n} else if (mimeType === 'application/vnd.google-apps.spreadsheet') {\n  allowed = false;\n} else if (mimeType === 'application/vnd.google-apps.presentation') {\n  allowed = false;\n} else if (mimeType === 'application/pdf') {\n  doc_type = 'pdf';\n  export_mime_type = null;\n} else if (mimeType.includes('word')) {\n  doc_type = 'word';\n} else if (mimeType.includes('text/plain') || name.endsWith('.md')) {\n  doc_type = 'text';\n} else {\n  allowed = false;\n}\n\nif (!allowed) return [];\n\nreturn [{ json: { ...$json, doc_type, export_mime_type, allowed } }];"
+      }
+    },
+    {
+      "id": "k3",
+      "name": "GDrive - Downloader",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-960, 0],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.id }}" },
+        "options": { "googleFileConversion": { "conversion": { "docsToFormat": "={{ $json.export_mime_type || 'text/plain' }}" } } }
+      },
+      "credentials": { "googleDriveOAuth2Api": { "id": "GOOGLE_DRIVE_OAUTH", "name": "Google Drive account" } }
+    },
+    {
+      "id": "k4",
+      "name": "Attach Fancy Metadata",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-740, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const name = $json.name || '';\nconst topic = name.includes(' - ') ? name.split(' - ')[0].trim() : name.split('.')[0];\nconst versionMatch = name.match(/v(\\d+)/i);\nconst version = versionMatch ? parseInt(versionMatch[1], 10) : 1;\n\nreturn [{\n  json: {\n    metadata: {\n      source: 'google_drive',\n      kb_collection: 'YTUMA_Knowledge_Base',\n      drive_file_id: $json.id,\n      drive_name: name,\n      drive_mime_type: $json.mimeType,\n      stored_mime_type: $json.export_mime_type || $json.mimeType,\n      doc_type: $json.doc_type,\n      topic,\n      ingested_at: new Date().toISOString(),\n      version,\n      drive_web_view_link: $json.webViewLink,\n      drive_modified_time: $json.modifiedTime,\n      ingested_by_workflow: '05_YTUMA_Knowledge_Base'\n    }\n  },\n  binary: $binary\n}];"
+      }
+    },
+    {
+      "id": "k5",
+      "name": "Loader - Binary",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [-560, 160],
+      "parameters": {
+        "dataType": "binary",
+        "loader": "auto"
+      }
+    },
+    {
+      "id": "k6",
+      "name": "Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterRecursiveCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [-560, 260],
+      "parameters": { "chunkSize": 1000, "chunkOverlap": 100 }
+    },
+    {
+      "id": "k7",
+      "name": "Embeddings - OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [-560, 60],
+      "parameters": {},
+      "credentials": { "openAiApi": { "id": "OPENAI_API", "name": "OpenAI account" } }
+    },
+    {
+      "id": "k8",
+      "name": "Knowledge Base - Insert",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [-320, 0],
+      "parameters": {
+        "mode": "insert",
+        "pineconeIndex": { "value": "ytuma-knowledge-base" }
+      },
+      "credentials": { "pineconeApi": { "id": "PINECONE_API", "name": "Pinecone account" } }
+    }
+  ],
+  "connections": {
+    "Start - Drive Watcher": { "main": [[{ "node": "Filter + Classify File", "type": "main", "index": 0 }]] },
+    "Filter + Classify File": { "main": [[{ "node": "GDrive - Downloader", "type": "main", "index": 0 }]] },
+    "GDrive - Downloader": { "main": [[{ "node": "Attach Fancy Metadata", "type": "main", "index": 0 }]] },
+    "Attach Fancy Metadata": { "main": [[{ "node": "Knowledge Base - Insert", "type": "main", "index": 0 }]] },
+    "Loader - Binary": { "ai_document": [[{ "node": "Knowledge Base - Insert", "type": "ai_document", "index": 0 }]] },
+    "Text Splitter": { "ai_textSplitter": [[{ "node": "Loader - Binary", "type": "ai_textSplitter", "index": 0 }]] },
+    "Embeddings - OpenAI": { "ai_embedding": [[{ "node": "Knowledge Base - Insert", "type": "ai_embedding", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

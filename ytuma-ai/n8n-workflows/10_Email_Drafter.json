@@ -1,0 +1,114 @@
+{
+  "name": "10_YTUMA_Email_Drafter",
+  "nodes": [
+    {
+      "id": "d1",
+      "name": "Start - Draft Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1400, 0],
+      "parameters": {
+        "workflowInputs": { "values": [{ "name": "to_email" }, { "name": "subject" }, { "name": "email_text" }, { "name": "user_id" }] }
+      }
+    },
+    {
+      "id": "d2",
+      "name": "Call '02_YTUMA_Brain'",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1180, 0],
+      "parameters": {
+        "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
+        "workflowInputs": { "value": {
+          "prompt": "={{ $json.email_text }}",
+          "user_id": "={{ $json.user_id || 'boss' }}",
+          "source": "email_draft"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "d3",
+      "name": "Build - Email Record",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-960, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "to_email", "value": "={{ $('Start - Draft Request').item.json.to_email }}" },
+            { "name": "subject", "value": "={{ $('Start - Draft Request').item.json.subject }}" },
+            { "name": "body", "value": "={{ $json.output }}" },
+            { "name": "channel", "value": "email" },
+            { "name": "summary_for_boss", "value": "={{ 'To: ' + $('Start - Draft Request').item.json.to_email + '\\nSubject: ' + $('Start - Draft Request').item.json.subject + '\\nSummary: ' + $json.output.replace(/\\s+/g, ' ').slice(0, 140) }}" },
+            { "name": "status", "value": "pending_approval" },
+            { "name": "created_at", "value": "={{ $now.toISO() }}" },
+            { "name": "last_action", "value": "draft_created" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "d4",
+      "name": "Code - Approval Record Generator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-740, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const now = new Date();\nconst yy = now.getFullYear().toString().slice(-2);\nconst mm = String(now.getMonth() + 1).padStart(2, '0');\nconst dd = String(now.getDate()).padStart(2, '0');\nconst datePart = `${yy}${mm}${dd}`;\nconst alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';\nfunction randomChunk(len = 8) {\n  let out = '';\n  for (let i = 0; i < len; i++) out += alphabet[Math.floor(Math.random() * alphabet.length)];\n  return out;\n}\nconst approval_id = `${datePart}-${randomChunk(8)}`;\n\nreturn [{ json: { ...$json, approval_code: approval_id, approval_id } }];"
+      }
+    },
+    {
+      "id": "d5",
+      "name": "Append row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-520, 0],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "columns": {
+          "value": {
+            "approval_code": "={{ $json.approval_code }}",
+            "approval_id": "={{ $json.approval_id }}",
+            "channel": "={{ $json.channel }}",
+            "to_email": "={{ $json.to_email }}",
+            "subject": "={{ $json.subject }}",
+            "body": "={{ $json.body }}",
+            "summary_for_boss": "={{ $json.summary_for_boss }}",
+            "status": "={{ $json.status }}",
+            "created_at": "={{ $json.created_at }}",
+            "last_action": "={{ $json.last_action }}"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "d6",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-300, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "ADMIN_TELEGRAM_CHAT_ID",
+        "parseMode": "none",
+        "text": "=📧 New email draft ready\nID: {{ $json.approval_id }}\nTo: {{ $json.to_email }}\nSubject: {{ $json.subject }}\n\nSummary:\n{{ $json.summary_for_boss }}\n\nFull draft:\n------------------------------\n{{ $json.body }}\n------------------------------\n\nReply with ONE of the following:\n• approve {{ $json.approval_id }}\n• edit {{ $json.approval_id }}: <your updated message>\n• cancel {{ $json.approval_id }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Start - Draft Request": { "main": [[{ "node": "Call '02_YTUMA_Brain'", "type": "main", "index": 0 }]] },
+    "Call '02_YTUMA_Brain'": { "main": [[{ "node": "Build - Email Record", "type": "main", "index": 0 }]] },
+    "Build - Email Record": { "main": [[{ "node": "Code - Approval Record Generator", "type": "main", "index": 0 }]] },
+    "Code - Approval Record Generator": { "main": [[{ "node": "Append row in sheet", "type": "main", "index": 0 }]] },
+    "Append row in sheet": { "main": [[{ "node": "Send a text message", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

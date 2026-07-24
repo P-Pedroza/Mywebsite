@@ -1,0 +1,104 @@
+{
+  "name": "01_YTUMA_Gateway",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "01_Gateway_Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1120, 0],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ytuma/gateway",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "webhookId": "ytuma-gateway",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YTUMA_GATEWAY_SECRET",
+          "name": "YTUMA Gateway Secret"
+        }
+      }
+    },
+    {
+      "id": "n2",
+      "name": "01_Gateway_Validate_Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-900, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const MAX_PROMPT_LENGTH = 2000;\nconst body = $json.body || $json || {};\nlet { prompt, user_id, source } = body;\n\nif (!prompt || !prompt.toString().trim()) {\n  throw new Error('Missing or empty \"prompt\" field.');\n}\n\nlet cleanPrompt = prompt.toString().trim();\ncleanPrompt = cleanPrompt\n  .replace(/<script[\\s\\S]*?>[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<[^>]+>/g, '');\n\nif (cleanPrompt.length > MAX_PROMPT_LENGTH) {\n  cleanPrompt = cleanPrompt.slice(0, MAX_PROMPT_LENGTH);\n}\n\nconst cleanUserId = (user_id && user_id.toString().trim()) || 'anonymous';\nconst cleanSource = (source && source.toString().trim().toLowerCase()) || 'web';\n\nreturn [{\n  json: {\n    prompt: cleanPrompt,\n    user_id: cleanUserId,\n    source: cleanSource,\n    received_at: new Date().toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Rate_Limit_Per_User",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-680, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const data = this.getWorkflowStaticData('global');\nconst userId = $json.user_id;\nconst now = Date.now();\n\nif (!data.rateHistory) data.rateHistory = {};\nif (!data.rateHistory[userId]) data.rateHistory[userId] = [];\n\ndata.rateHistory[userId] = data.rateHistory[userId].filter(ts => now - ts < 60 * 60 * 1000);\n\nconst last10s = data.rateHistory[userId].filter(ts => now - ts < 10 * 1000).length;\nconst lastHour = data.rateHistory[userId].length;\n\nlet rate_limited = false;\nlet rate_reason = null;\n\nif (last10s >= 3) {\n  rate_limited = true;\n  rate_reason = 'Too many requests in a short window. Slow down.';\n} else if (lastHour >= 60) {\n  rate_limited = true;\n  rate_reason = 'Hourly request limit reached.';\n} else {\n  data.rateHistory[userId].push(now);\n}\n\nreturn [{ json: { ...$json, rate_limited, rate_reason } }];"
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Content_Filter_Profanity",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-460, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const blockedWords = ['badword1', 'badword2', 'badword3'];\nlet text = ($json.prompt || '').toString();\nlet flagged = false;\n\nfor (const word of blockedWords) {\n  const re = new RegExp(word, 'gi');\n  if (re.test(text)) {\n    flagged = true;\n    text = text.replace(re, '***');\n  }\n}\n\nreturn [{\n  json: {\n    ...$json,\n    prompt: text,\n    moderation_flagged: flagged,\n    moderation_reason: flagged ? 'Contains blocked terms.' : null\n  }\n}];"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Normalize_Source_Tag",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-240, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const raw = ($json.source || $json.channel || $json.origin || '').toString().toLowerCase();\nlet source = 'unknown';\n\nif (raw.includes('tg') || raw.includes('telegram')) source = 'telegram';\nelse if (raw.includes('phone') || raw.includes('twilio')) source = 'phone';\nelse if (raw.includes('email') || raw.includes('gmail')) source = 'email';\nelse if (raw.includes('web') || raw.includes('site')) source = 'web';\nelse if (raw.includes('cron') || raw.includes('system')) source = 'system';\n\nreturn [{ json: { ...$json, source } }];"
+      }
+    },
+    {
+      "id": "n6",
+      "name": "01_Gateway_Call_Brain",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-20, 0],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "value": "02_YTUMA_Brain",
+          "cachedResultName": "02_YTUMA_Brain"
+        },
+        "workflowInputs": {
+          "value": {
+            "prompt": "={{ $json.prompt }}",
+            "user_id": "={{ $json.user_id }}",
+            "source": "={{ $json.source }}",
+            "meta": "={{ { received_at: $json.received_at, rate_limited: $json.rate_limited, rate_reason: $json.rate_reason, moderation_flagged: $json.moderation_flagged, moderation_reason: $json.moderation_reason, source: $json.source } }}"
+          }
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    }
+  ],
+  "connections": {
+    "01_Gateway_Webhook": { "main": [[{ "node": "01_Gateway_Validate_Input", "type": "main", "index": 0 }]] },
+    "01_Gateway_Validate_Input": { "main": [[{ "node": "Rate_Limit_Per_User", "type": "main", "index": 0 }]] },
+    "Rate_Limit_Per_User": { "main": [[{ "node": "Content_Filter_Profanity", "type": "main", "index": 0 }]] },
+    "Content_Filter_Profanity": { "main": [[{ "node": "Normalize_Source_Tag", "type": "main", "index": 0 }]] },
+    "Normalize_Source_Tag": { "main": [[{ "node": "01_Gateway_Call_Brain", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

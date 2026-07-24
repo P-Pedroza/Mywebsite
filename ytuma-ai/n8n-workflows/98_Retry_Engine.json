@@ -1,0 +1,143 @@
+{
+  "name": "98_YTUMA_Retry_Engine",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "Trigger - Called By Workflow",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1300, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "workflow_name" }, { "name": "node_name" }, { "name": "severity" },
+            { "name": "message" }, { "name": "error_type" }, { "name": "trace_id" },
+            { "name": "attempt" }, { "name": "retry_policy" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "r2",
+      "name": "Normalize_Retry_State",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1080, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const input = $json;\nconst policy = input.retry_policy || {};\nconst max_attempts = policy.max_attempts ?? 3;\nconst backoff_minutes = policy.backoff_minutes ?? 5;\nconst max_delay_minutes = policy.max_delay_minutes ?? 60;\nconst high_max_attempts = policy.high_max_attempts ?? 1;\nconst hard_stop = policy.hard_stop === true;\n\nconst attempt = (input.attempt || 0) + 1;\nconst severity = (input.severity || 'medium').toLowerCase();\nconst effectiveMax = severity === 'high' ? high_max_attempts : max_attempts;\n\nlet delay_minutes = Math.min(backoff_minutes * attempt, max_delay_minutes);\nlet action;\n\nif (hard_stop) {\n  action = severity === 'low' ? 'stop' : 'escalate';\n} else if (attempt <= effectiveMax) {\n  action = 'retry';\n} else if (severity === 'low') {\n  action = 'stop';\n} else {\n  action = 'escalate';\n}\n\nreturn [{\n  json: {\n    ...input,\n    attempt,\n    max_attempts: effectiveMax,\n    delay_minutes,\n    action,\n    retry_now: action === 'retry'\n  }\n}];"
+      }
+    },
+    {
+      "id": "r3",
+      "name": "Should_Retry",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-860, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.retry_now }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
+      }
+    },
+    {
+      "id": "r4",
+      "name": "Backoff_Wait",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-640, -80],
+      "parameters": { "unit": "minutes", "amount": "={{ $json.delay_minutes }}" }
+    },
+    {
+      "id": "r5",
+      "name": "Return_Retry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-440, -80],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "retry_now", "type": "boolean", "value": true },
+          { "name": "action", "value": "retry" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id }}" }
+        ] }
+      }
+    },
+    {
+      "id": "r6",
+      "name": "Action_Is_Escalate",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-640, 100],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "escalate", "operator": { "type": "string", "operation": "equals" } }] }
+      }
+    },
+    {
+      "id": "r7",
+      "name": "Call '99_YTUMA_Error_Handler'",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-420, 60],
+      "parameters": {
+        "workflowId": { "value": "99_YTUMA_Error_Handler", "cachedResultName": "99_YTUMA_Error_Handler" },
+        "workflowInputs": { "value": {
+          "workflow_name": "={{ $json.workflow_name }}",
+          "node_name": "={{ $json.node_name }}",
+          "severity": "={{ $json.severity }}",
+          "message": "={{ $json.message }}",
+          "error_type": "={{ $json.error_type }}",
+          "trace_id": "={{ $json.trace_id }}"
+        } }
+      }
+    },
+    {
+      "id": "r8",
+      "name": "Return_Escalated",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-200, 60],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "retry_now", "type": "boolean", "value": false },
+          { "name": "action", "value": "escalate" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id }}" }
+        ] }
+      }
+    },
+    {
+      "id": "r9",
+      "name": "Return_Stop",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-420, 220],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "retry_now", "type": "boolean", "value": false },
+          { "name": "action", "value": "stop" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id }}" }
+        ] }
+      }
+    }
+  ],
+  "connections": {
+    "Trigger - Called By Workflow": { "main": [[{ "node": "Normalize_Retry_State", "type": "main", "index": 0 }]] },
+    "Normalize_Retry_State": { "main": [[{ "node": "Should_Retry", "type": "main", "index": 0 }]] },
+    "Should_Retry": {
+      "main": [
+        [{ "node": "Backoff_Wait", "type": "main", "index": 0 }],
+        [{ "node": "Action_Is_Escalate", "type": "main", "index": 0 }]
+      ]
+    },
+    "Backoff_Wait": { "main": [[{ "node": "Return_Retry", "type": "main", "index": 0 }]] },
+    "Action_Is_Escalate": {
+      "main": [
+        [{ "node": "Call '99_YTUMA_Error_Handler'", "type": "main", "index": 0 }],
+        [{ "node": "Return_Stop", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call '99_YTUMA_Error_Handler'": { "main": [[{ "node": "Return_Escalated", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

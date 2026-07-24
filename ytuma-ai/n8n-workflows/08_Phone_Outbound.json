@@ -1,0 +1,134 @@
+{
+  "name": "08_YTUMA_Phone_Outbound_Caller",
+  "nodes": [
+    {
+      "id": "p1",
+      "name": "Start - Outbound Call API",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1500, 0],
+      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-outbound-api", "authentication": "headerAuth", "responseMode": "responseNode", "options": {} },
+      "credentials": { "httpHeaderAuth": { "id": "YTUMA_GATEWAY_SECRET", "name": "YTUMA Gateway Secret" } }
+    },
+    {
+      "id": "p2",
+      "name": "Normalize - Outbound Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1280, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const body = $json.body || $json;\nlet to_phone = (body.to_phone || '').toString().replace(/[^\\d+]/g, '');\nif (!to_phone) throw new Error('to_phone is required.');\nif (!to_phone.startsWith('+')) to_phone = '+1' + to_phone.replace(/^1/, '');\n\nreturn [{\n  json: {\n    to_phone,\n    contact_name: body.contact_name || 'Unknown',\n    contact_email: body.contact_email || '',\n    purpose: body.purpose || 'general',\n    stage: body.stage || 'Lead',\n    next_action: body.next_action || '',\n    handled_by: body.handled_by || 'sol',\n    preferred_language: body.preferred_language || 'en'\n  }\n}];"
+      }
+    },
+    {
+      "id": "p3",
+      "name": "Call → Sol Brain",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1060, 0],
+      "parameters": {
+        "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
+        "workflowInputs": { "value": {
+          "prompt": "=You are Sol, my outbound phone agent calling on behalf of Alex. Purpose of this call: {{ $json.purpose }}. Contact: {{ $json.contact_name }}. Write a short, natural, spoken call script (no markdown, no XML).",
+          "user_id": "=phone_{{ $json.to_phone }}",
+          "source": "phone"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "p4",
+      "name": "Normalize - Phone Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-840, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "timestamp", "value": "={{ $now.toISO() }}" },
+            { "name": "to_phone", "value": "={{ $('Normalize - Outbound Request').item.json.to_phone }}" },
+            { "name": "contact_name", "value": "={{ $('Normalize - Outbound Request').item.json.contact_name }}" },
+            { "name": "contact_email", "value": "={{ $('Normalize - Outbound Request').item.json.contact_email }}" },
+            { "name": "purpose", "value": "={{ $('Normalize - Outbound Request').item.json.purpose }}" },
+            { "name": "preferred_language", "value": "={{ $('Normalize - Outbound Request').item.json.preferred_language }}" },
+            { "name": "handled_by", "value": "={{ $('Normalize - Outbound Request').item.json.handled_by }}" },
+            { "name": "call_script", "value": "={{ $json.output || 'Hi, this is Sol calling on behalf of Alex Pedroza with YTUMA...' }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "p5",
+      "name": "Make a call",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [-620, 0],
+      "parameters": {
+        "resource": "call",
+        "from": "+13176434814",
+        "to": "={{ $json.to_phone }}",
+        "twiml": "=<Response><Pause length=\"1\"/><Say voice=\"{{ $json.preferred_language === 'es' ? 'Polly.Lupe' : 'Polly.Joanna' }}\" language=\"{{ $json.preferred_language === 'es' ? 'es-MX' : 'en-US' }}\"><prosody rate=\"85%\">{{ $json.call_script }}</prosody></Say><Pause length=\"1\"/></Response>"
+      },
+      "credentials": { "twilioApi": { "id": "TWILIO_API", "name": "Twilio account" } }
+    },
+    {
+      "id": "p6",
+      "name": "CRM EVENT",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-400, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "timestamp", "value": "={{ $('Normalize - Phone Event').item.json.timestamp }}" },
+            { "name": "contact_phone", "value": "={{ $('Normalize - Phone Event').item.json.to_phone }}" },
+            { "name": "contact_name", "value": "={{ $('Normalize - Phone Event').item.json.contact_name }}" },
+            { "name": "contact_email", "value": "={{ $('Normalize - Phone Event').item.json.contact_email }}" },
+            { "name": "channel", "value": "phone" },
+            { "name": "direction", "value": "outbound" },
+            { "name": "summary", "value": "={{ 'Outbound call for: ' + $('Normalize - Phone Event').item.json.purpose }}" },
+            { "name": "full_message", "value": "={{ $('Normalize - Phone Event').item.json.call_script }}" },
+            { "name": "next_action", "value": "={{ $('Normalize - Outbound Request').item.json.next_action }}" },
+            { "name": "stage", "value": "Lead" },
+            { "name": "tags", "value": "phone,auto" },
+            { "name": "handled_by", "value": "={{ $('Normalize - Phone Event').item.json.handled_by }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "p7",
+      "name": "Log Call to CRM",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-180, 0],
+      "parameters": {
+        "workflowId": { "value": "07_YTUMA_CRM_Sheets", "cachedResultName": "07_YTUMA_CRM_Sheets" },
+        "workflowInputs": { "value": "={{ $json }}" }
+      }
+    },
+    {
+      "id": "p8",
+      "name": "Respond - Queued",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [40, 0],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { status: 'queued', to: $('Normalize - Outbound Request').item.json.to_phone, message: 'Outbound call scheduled via YTUMA.' } }}"
+      }
+    }
+  ],
+  "connections": {
+    "Start - Outbound Call API": { "main": [[{ "node": "Normalize - Outbound Request", "type": "main", "index": 0 }]] },
+    "Normalize - Outbound Request": { "main": [[{ "node": "Call → Sol Brain", "type": "main", "index": 0 }]] },
+    "Call → Sol Brain": { "main": [[{ "node": "Normalize - Phone Event", "type": "main", "index": 0 }]] },
+    "Normalize - Phone Event": { "main": [[{ "node": "Make a call", "type": "main", "index": 0 }]] },
+    "Make a call": { "main": [[{ "node": "CRM EVENT", "type": "main", "index": 0 }]] },
+    "CRM EVENT": { "main": [[{ "node": "Log Call to CRM", "type": "main", "index": 0 }]] },
+    "Log Call to CRM": { "main": [[{ "node": "Respond - Queued", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,119 @@
+{
+  "name": "03_YTUMA_Tool_Calendar",
+  "nodes": [
+    {
+      "id": "c1",
+      "name": "Start - Tool Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1200, 0],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "c2",
+      "name": "Validate - Calendar Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-980, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const allowedActions = ['add_event', 'check_availability'];\nconst { action, summary, start_time, end_time } = $json;\n\nif (!action || !allowedActions.includes(action)) {\n  throw new Error(\"Invalid or missing 'action'. Must be 'add_event' or 'check_availability'.\");\n}\n\nif (action === 'add_event') {\n  if (!summary || !summary.toString().trim()) throw new Error(\"For add_event, 'summary' is required.\");\n  if (!start_time || !end_time) throw new Error(\"For add_event, 'start_time' and 'end_time' are required.\");\n}\nif (action === 'check_availability') {\n  if (!start_time || !end_time) throw new Error(\"For check_availability, 'start_time' and 'end_time' are required.\");\n}\n\nconst start = new Date(start_time);\nconst end = new Date(end_time);\nif (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error('start_time / end_time must be valid ISO dates.');\nif (end <= start) throw new Error('end_time must be after start_time.');\n\nreturn [{\n  json: {\n    action,\n    summary: (summary || '').toString().trim(),\n    start_time: start.toISOString(),\n    end_time: end.toISOString()\n  }\n}];"
+      }
+    },
+    {
+      "id": "c3",
+      "name": "Router - Action Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-760, 0],
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputKey": "add_event", "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "add_event", "operator": { "type": "string", "operation": "equals" } }] } },
+            { "outputKey": "check_availability", "conditions": { "conditions": [{ "leftValue": "={{ $json.action }}", "rightValue": "check_availability", "operator": { "type": "string", "operation": "equals" } }] } }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c4",
+      "name": "GCal - Create Event",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [-500, -100],
+      "parameters": {
+        "operation": "create",
+        "calendar": { "value": "alex@ytumaai.com" },
+        "start": "={{ $json.start_time }}",
+        "end": "={{ $json.end_time }}",
+        "additionalFields": { "summary": "={{ $json.summary }}" }
+      },
+      "credentials": { "googleCalendarOAuth2Api": { "id": "GOOGLE_CALENDAR_OAUTH", "name": "Google Calendar account" } }
+    },
+    {
+      "id": "c5",
+      "name": "Format - Add Event Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-260, -100],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "success", "type": "boolean", "value": true },
+            { "name": "action", "value": "add_event" },
+            { "name": "event", "value": "={{ { id: $json.id, summary: $json.summary, start: $json.start, end: $json.end, link: $json.htmlLink, creator: $json.creator, calendar_id: 'alex@ytumaai.com' } }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c6",
+      "name": "GCal - Get Availability",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [-500, 100],
+      "parameters": {
+        "operation": "getAll",
+        "calendar": { "value": "alex@ytumaai.com" },
+        "timeMin": "={{ $json.start_time }}",
+        "timeMax": "={{ $json.end_time }}",
+        "options": {}
+      },
+      "credentials": { "googleCalendarOAuth2Api": { "id": "GOOGLE_CALENDAR_OAUTH", "name": "Google Calendar account" } }
+    },
+    {
+      "id": "c7",
+      "name": "Format - Availability Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-260, 100],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "success", "type": "boolean", "value": true },
+            { "name": "action", "value": "check_availability" },
+            { "name": "availability", "value": "={{ $input.all().length === 0 ? 'free' : 'busy' }}" },
+            { "name": "booked_slots", "value": "={{ $input.all().map(i => ({ summary: i.json.summary, start: i.json.start, end: i.json.end })) }}" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Start - Tool Request": { "main": [[{ "node": "Validate - Calendar Request", "type": "main", "index": 0 }]] },
+    "Validate - Calendar Request": { "main": [[{ "node": "Router - Action Type", "type": "main", "index": 0 }]] },
+    "Router - Action Type": {
+      "main": [
+        [{ "node": "GCal - Create Event", "type": "main", "index": 0 }],
+        [{ "node": "GCal - Get Availability", "type": "main", "index": 0 }]
+      ]
+    },
+    "GCal - Create Event": { "main": [[{ "node": "Format - Add Event Response", "type": "main", "index": 0 }]] },
+    "GCal - Get Availability": { "main": [[{ "node": "Format - Availability Response", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,222 @@
+{
+  "name": "99_YTUMA_Error_Handler",
+  "nodes": [
+    {
+      "id": "e1",
+      "name": "Start - System Fail",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [-1500, -100],
+      "parameters": {}
+    },
+    {
+      "id": "e2",
+      "name": "Start - Manual Test Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1500, 100],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "workflow_name" }, { "name": "node_name" }, { "name": "severity" },
+            { "name": "message" }, { "name": "error_type" }, { "name": "trace_id" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "e3",
+      "name": "Schema Guard - Validate Error Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1280, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const isSystemError = !!$json.execution;\nconst src = isSystemError ? {\n  workflow_name: $json.workflow && $json.workflow.name,\n  node_name: $json.node && $json.node.name,\n  severity: 'medium',\n  message: $json.execution && $json.execution.error && $json.execution.error.message,\n  error_type: 'N8N_SYSTEM_ERROR',\n  trace_id: 'trace_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),\n  run_url: $json.execution && $json.execution.url\n} : $json;\n\nconst allowedSeverity = ['high', 'medium', 'low'];\nconst severity = allowedSeverity.includes((src.severity || '').toLowerCase()) ? src.severity.toLowerCase() : 'medium';\n\nreturn [{\n  json: {\n    workflow_name: src.workflow_name || 'UNKNOWN_WORKFLOW',\n    node_name: src.node_name || 'UNKNOWN_NODE',\n    severity,\n    message: src.message || 'Unknown error',\n    error_type: src.error_type || 'APP_ERROR',\n    trace_id: src.trace_id || ('trace_' + Date.now()),\n    run_url: src.run_url || '',\n    schema_version: 1,\n    timestamp: new Date().toISOString(),\n    raw: src\n  }\n}];"
+      }
+    },
+    {
+      "id": "e4",
+      "name": "Sanitize - Redact Secrets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1060, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const SECRET_KEYS = ['access_token', 'refresh_token', 'client_secret', 'authorization', 'password'];\n\nfunction redact(obj) {\n  if (obj === null || typeof obj !== 'object') return obj;\n  const clone = Array.isArray(obj) ? [] : {};\n  for (const [k, v] of Object.entries(obj)) {\n    if (SECRET_KEYS.includes(k.toLowerCase())) {\n      clone[k] = '[REDACTED]';\n    } else if (typeof v === 'object' && v !== null) {\n      clone[k] = redact(v);\n    } else {\n      clone[k] = v;\n    }\n  }\n  return clone;\n}\n\nconst raw_sanitized = JSON.stringify(redact($json.raw || {}));\nconst out = { ...$json };\ndelete out.raw;\nout.raw_sanitized = raw_sanitized;\n\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "e5",
+      "name": "Build Dedupe Key",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-840, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "dedupe_key", "value": "={{ [$json.workflow_name, $json.node_name, $json.error_type, $json.message].join('||') }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "e6",
+      "name": "Log - Error_Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-620, -80],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YTUMA_OBSERVABILITY_SHEET_ID" },
+        "sheetName": { "value": "Error_Log" },
+        "columns": {
+          "value": {
+            "timestamp": "={{ $json.timestamp }}",
+            "trace_id": "={{ $json.trace_id }}",
+            "severity": "={{ $json.severity }}",
+            "workflow_name": "={{ $json.workflow_name }}",
+            "node_name": "={{ $json.node_name }}",
+            "error_type": "={{ $json.error_type }}",
+            "message": "={{ $json.message }}",
+            "run_url": "={{ $json.run_url }}",
+            "raw_sanitized": "={{ $json.raw_sanitized }}",
+            "status": "NEW"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "e7",
+      "name": "Dedupe_Get_Row",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-620, 80],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_OBSERVABILITY_SHEET_ID" },
+        "sheetName": { "value": "Alert_Dedupe" },
+        "filtersUI": { "values": [{ "lookupColumn": "dedupe_key", "lookupValue": "={{ $json.dedupe_key }}" }] },
+        "options": { "returnAllMatches": false, "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "e8",
+      "name": "Triage - Escalation + Cooldown",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-400, 80],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const ESCALATION_WINDOW_MIN = 10;\nconst ESCALATION_THRESHOLD = 3;\nconst COOLDOWN_MIN = 10;\n\nconst err = $('Build Dedupe Key').item.json;\nconst existing = $json; // may be empty object if no dedupe row found\nconst now = new Date();\n\nconst hit_count = (existing.hit_count ? parseInt(existing.hit_count, 10) : 0) + 1;\nconst first_seen_at = existing.first_seen_at || err.timestamp;\nconst last_sent_at = existing.last_sent_at ? new Date(existing.last_sent_at) : null;\n\nconst withinCooldown = last_sent_at && (now - last_sent_at) < COOLDOWN_MIN * 60 * 1000;\nconst recentWindowStart = new Date(now.getTime() - ESCALATION_WINDOW_MIN * 60 * 1000);\nconst escalated = err.severity !== 'high' && hit_count >= ESCALATION_THRESHOLD && new Date(first_seen_at) > recentWindowStart;\nconst effectiveSeverity = escalated ? 'high' : err.severity;\n\nconst shouldNotify = !withinCooldown && (effectiveSeverity === 'high' || effectiveSeverity === 'medium');\n\nreturn [{\n  json: {\n    ...err,\n    hit_count,\n    first_seen_at,\n    last_seen_at: now.toISOString(),\n    last_sent_at: shouldNotify ? now.toISOString() : (existing.last_sent_at || ''),\n    escalated,\n    effective_severity: effectiveSeverity,\n    shouldNotify,\n    dedupe_row_exists: !!existing.dedupe_key\n  }\n}];"
+      }
+    },
+    {
+      "id": "e9",
+      "name": "Dedupe Exists",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-180, 80],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.dedupe_row_exists }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
+      }
+    },
+    {
+      "id": "e10",
+      "name": "Update Alert_Dedupe",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [40, 20],
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": { "value": "YTUMA_OBSERVABILITY_SHEET_ID" },
+        "sheetName": { "value": "Alert_Dedupe" },
+        "columns": {
+          "matchingColumns": ["dedupe_key"],
+          "value": {
+            "dedupe_key": "={{ $json.dedupe_key }}",
+            "hit_count": "={{ $json.hit_count }}",
+            "first_seen_at": "={{ $json.first_seen_at }}",
+            "last_seen_at": "={{ $json.last_seen_at }}",
+            "last_sent_at": "={{ $json.last_sent_at }}"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "e11",
+      "name": "Append Alert_Dedupe",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [40, 140],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "value": "YTUMA_OBSERVABILITY_SHEET_ID" },
+        "sheetName": { "value": "Alert_Dedupe" },
+        "columns": {
+          "value": {
+            "dedupe_key": "={{ $json.dedupe_key }}",
+            "hit_count": "={{ $json.hit_count }}",
+            "first_seen_at": "={{ $json.first_seen_at }}",
+            "last_seen_at": "={{ $json.last_seen_at }}",
+            "last_sent_at": "={{ $json.last_sent_at }}"
+          }
+        }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "e12",
+      "name": "Should Notify",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [260, 80],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.shouldNotify }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
+      }
+    },
+    {
+      "id": "e13",
+      "name": "Notify - Admin",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [480, 40],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "ADMIN_EMAIL",
+        "subject": "=YTUMA [{{ $json.effective_severity.toUpperCase() }}] {{ $json.workflow_name }} / {{ $json.node_name }}",
+        "message": "=Severity: {{ $json.effective_severity }}\nWorkflow: {{ $json.workflow_name }}\nNode: {{ $json.node_name }}\nMessage: {{ $json.message }}\nTrace: {{ $json.trace_id }}\nRun: {{ $json.run_url }}\nHits (window): {{ $json.hit_count }}"
+      },
+      "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } }
+    }
+  ],
+  "connections": {
+    "Start - System Fail": { "main": [[{ "node": "Schema Guard - Validate Error Payload", "type": "main", "index": 0 }]] },
+    "Start - Manual Test Trigger": { "main": [[{ "node": "Schema Guard - Validate Error Payload", "type": "main", "index": 0 }]] },
+    "Schema Guard - Validate Error Payload": { "main": [[{ "node": "Sanitize - Redact Secrets", "type": "main", "index": 0 }]] },
+    "Sanitize - Redact Secrets": { "main": [[{ "node": "Build Dedupe Key", "type": "main", "index": 0 }]] },
+    "Build Dedupe Key": {
+      "main": [[
+        { "node": "Log - Error_Log", "type": "main", "index": 0 },
+        { "node": "Dedupe_Get_Row", "type": "main", "index": 0 }
+      ]]
+    },
+    "Dedupe_Get_Row": { "main": [[{ "node": "Triage - Escalation + Cooldown", "type": "main", "index": 0 }]] },
+    "Triage - Escalation + Cooldown": { "main": [[{ "node": "Dedupe Exists", "type": "main", "index": 0 }]] },
+    "Dedupe Exists": {
+      "main": [
+        [{ "node": "Update Alert_Dedupe", "type": "main", "index": 0 }],
+        [{ "node": "Append Alert_Dedupe", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Alert_Dedupe": { "main": [[{ "node": "Should Notify", "type": "main", "index": 0 }]] },
+    "Append Alert_Dedupe": { "main": [[{ "node": "Should Notify", "type": "main", "index": 0 }]] },
+    "Should Notify": { "main": [[{ "node": "Notify - Admin", "type": "main", "index": 0 }], []] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

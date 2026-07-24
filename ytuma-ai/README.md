@@ -18,6 +18,8 @@ data (names, phone numbers, addresses) — everything is templated for reuse acr
   templates.
 - **`docs/how-it-works.md`** — the architecture explained end-to-end in plain language, with a diagram,
   suitable for walking a prospect through the system.
+- **`docs/testing-guide.md`** — the order to test everything in (Brain alone → tools alone → channels →
+  abuse/failure cases) before you let a real client near it, plus a go-live sign-off checklist.
 
 ## Reality check on scope
 

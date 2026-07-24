@@ -1,0 +1,65 @@
+{
+  "name": "04b_YTUMA_Debug_Telegram_Brain",
+  "nodes": [
+    {
+      "id": "dbg1",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-900, 0],
+      "parameters": { "updates": ["message"] },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } },
+      "notes": "Point this at a SEPARATE test bot token, not your production bot, so debug traffic never mixes with real client messages."
+    },
+    {
+      "id": "dbg2",
+      "name": "Build Brain Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-680, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "prompt", "value": "={{ $json.message.text }}" },
+            { "name": "user_id", "value": "={{ 'telegram_' + $json.message.from.id }}" }
+          ]
+        },
+        "options": { "dotNotation": false }
+      },
+      "notes": "Ignores voice/stickers/files on purpose - this workflow only exists to expose raw Brain behavior for text."
+    },
+    {
+      "id": "dbg3",
+      "name": "Call '02_YTUMA_Brain'",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-460, 0],
+      "parameters": {
+        "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
+        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "debug" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "dbg4",
+      "name": "Reply to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-240, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output || '⚠️ (Brain returned empty output – check 02_YTUMA_Brain prompt.)' }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": { "main": [[{ "node": "Build Brain Input", "type": "main", "index": 0 }]] },
+    "Build Brain Input": { "main": [[{ "node": "Call '02_YTUMA_Brain'", "type": "main", "index": 0 }]] },
+    "Call '02_YTUMA_Brain'": { "main": [[{ "node": "Reply to Telegram", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

@@ -23,14 +23,19 @@ Import in this order so `Execute Workflow` references resolve (n8n matches by wo
 7. `02_Brain.json`
 8. `01_Gateway.json`
 9. `04_Telegram.json`
-10. `08_Phone_Outbound.json`
-11. `09_Phone_Inbound_Receptionist.json`
-12. `10_Email_Drafter.json`
-13. `11_Email_Approval_Handler.json`
-14. `12_Email_Sender.json`
+10. `04b_Debug_Telegram_Brain.json`
+11. `08_Phone_Outbound.json`
+12. `09_Phone_Inbound_Receptionist.json`
+13. `10_Email_Drafter.json`
+14. `11_Email_Approval_Handler.json`
+15. `12_Email_Sender.json`
 
 After importing, open each `Execute Workflow` node and re-select the target workflow from the dropdown —
 n8n stores an internal workflow ID that won't match until you do this once per link.
+
+**Before wiring anything else, read `../docs/testing-guide.md`** — it's the order to actually test these
+in (Brain alone → tools alone → channels → abuse/failure cases) so a problem points you at one workflow
+instead of "somewhere in 14 files."
 
 ## What each workflow does
 
@@ -40,6 +45,7 @@ n8n stores an internal workflow ID that won't match until you do this once per l
 | 02 | Brain | The AI agent (GPT-4o). Loads context, builds the system prompt, calls tools, remembers short-term, returns `{success, output, meta}`. |
 | 03 | Tool: Calendar | Validates and executes `add_event` / `check_availability` against Google Calendar. |
 | 04 | Telegram | Text + voice message channel. Transcribes voice via Whisper, forwards to Brain, replies. |
+| 04b | Debug: Telegram → Brain | Testing sandbox only. Bypasses the Gateway/routing entirely so you can see raw Brain output — point it at a separate test bot, never production. |
 | 05 | Knowledge Ingestion | Watches a Drive folder, chunks + embeds new docs into Pinecone so the Brain can retrieve them. |
 | 06 | Tool: Journal | Writes durable facts to Pinecone + a human-readable Google Doc. Rejects and logs empty writes; alerts if spammed. |
 | 07 | CRM | Normalizes any channel event into one Contacts row (upsert) + one Interactions row (append) in Google Sheets. |

@@ -29,10 +29,55 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [-1260, 0],
+      "onError": "continueErrorOutput",
       "parameters": {
         "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
         "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
         "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "continueErrorOutput so a wrong/decommissioned number gets a graceful hangup instead of Twilio receiving a raw 500 and the caller hearing dead air."
+    },
+    {
+      "id": "i1c2",
+      "name": "IF Client Resolved (Greeting)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1150, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.error }}", "rightValue": "", "operator": { "type": "string", "operation": "equals" } }] }
+      }
+    },
+    {
+      "id": "i1f",
+      "name": "Log Unrecognized Number (Greeting)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1040, 100],
+      "parameters": {
+        "workflowId": { "value": "99_YTUMA_Error_Handler", "cachedResultName": "99_YTUMA_Error_Handler" },
+        "workflowInputs": { "value": {
+          "workflow_name": "09b_YTUMA_Phone_Inbound_Receptionist",
+          "node_name": "Resolve Client Config (Greeting)",
+          "severity": "medium",
+          "message": "=Inbound call to a Twilio number with no matching client row: {{ $json.twilio_number }}",
+          "error_type": "UNRECOGNIZED_PHONE_NUMBER",
+          "trace_id": "={{ 'phone_' + $now.toISO() }}",
+          "client_id": "unknown_number"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "A wrong number is itself worth knowing about - it usually means a number was disconnected, ported, or misconfigured in Twilio."
+    },
+    {
+      "id": "i1g",
+      "name": "Build Fallback Greeting",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-820, 100],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "greeting_xml", "value": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">Sorry, this number isn't currently set up. Please check the number and try again.</Say><Hangup/></Response>" }
+        ] }
       }
     },
     {
@@ -91,10 +136,54 @@
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
       "position": [-1260, 260],
+      "onError": "continueErrorOutput",
       "parameters": {
         "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
         "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
         "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "continueErrorOutput for the same reason as the greeting step - shouldn't normally trigger here since the greeting step already resolved the same number moments earlier, but a registry row deleted mid-call is still possible."
+    },
+    {
+      "id": "i3d2",
+      "name": "IF Client Resolved (Gather)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1150, 260],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.error }}", "rightValue": "", "operator": { "type": "string", "operation": "equals" } }] }
+      }
+    },
+    {
+      "id": "i3f",
+      "name": "Log Unrecognized Number (Gather)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1040, 360],
+      "parameters": {
+        "workflowId": { "value": "99_YTUMA_Error_Handler", "cachedResultName": "99_YTUMA_Error_Handler" },
+        "workflowInputs": { "value": {
+          "workflow_name": "09b_YTUMA_Phone_Inbound_Receptionist",
+          "node_name": "Resolve Client Config",
+          "severity": "medium",
+          "message": "=Gather step: no matching client for Twilio number {{ $('Normalize Gather Event').item.json.twilio_number }}",
+          "error_type": "UNRECOGNIZED_PHONE_NUMBER",
+          "trace_id": "={{ 'phone_' + $now.toISO() }}",
+          "client_id": "unknown_number"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "i3g",
+      "name": "Build Fallback Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-820, 360],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "reply_text", "value": "Sorry, I'm having trouble connecting you right now. Please try again shortly." }
+        ] }
       }
     },
     {
@@ -193,7 +282,7 @@
       "position": [60, 260],
       "parameters": {
         "respondWith": "text",
-        "responseBody": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">{{ $('Build - Phone Reply').item.json.reply_text }}</Say></Response>",
+        "responseBody": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">{{ $json.reply_text || $('Build - Phone Reply').item.json.reply_text }}</Say></Response>",
         "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
       }
     }
@@ -201,11 +290,27 @@
   "connections": {
     "Start - Phone Inbound": { "main": [[{ "node": "Normalize Inbound Call", "type": "main", "index": 0 }]] },
     "Normalize Inbound Call": { "main": [[{ "node": "Resolve Client Config (Greeting)", "type": "main", "index": 0 }]] },
-    "Resolve Client Config (Greeting)": { "main": [[{ "node": "Build Greeting TwiML", "type": "main", "index": 0 }]] },
+    "Resolve Client Config (Greeting)": { "main": [[{ "node": "IF Client Resolved (Greeting)", "type": "main", "index": 0 }]] },
+    "IF Client Resolved (Greeting)": {
+      "main": [
+        [{ "node": "Build Greeting TwiML", "type": "main", "index": 0 }],
+        [{ "node": "Log Unrecognized Number (Greeting)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Unrecognized Number (Greeting)": { "main": [[{ "node": "Build Fallback Greeting", "type": "main", "index": 0 }]] },
+    "Build Fallback Greeting": { "main": [[{ "node": "Respond - Greeting", "type": "main", "index": 0 }]] },
     "Build Greeting TwiML": { "main": [[{ "node": "Respond - Greeting", "type": "main", "index": 0 }]] },
     "Handle - Phone Gather": { "main": [[{ "node": "Normalize Gather Event", "type": "main", "index": 0 }]] },
     "Normalize Gather Event": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
-    "Resolve Client Config": { "main": [[{ "node": "Merge - Gather + Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "IF Client Resolved (Gather)", "type": "main", "index": 0 }]] },
+    "IF Client Resolved (Gather)": {
+      "main": [
+        [{ "node": "Merge - Gather + Config", "type": "main", "index": 0 }],
+        [{ "node": "Log Unrecognized Number (Gather)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Unrecognized Number (Gather)": { "main": [[{ "node": "Build Fallback Reply", "type": "main", "index": 0 }]] },
+    "Build Fallback Reply": { "main": [[{ "node": "Respond-Twilio", "type": "main", "index": 0 }]] },
     "Merge - Gather + Config": { "main": [[{ "node": "Call → Sol Brain", "type": "main", "index": 0 }]] },
     "Call → Sol Brain": { "main": [[{ "node": "Build - Phone Reply", "type": "main", "index": 0 }]] },
     "Build - Phone Reply": { "main": [[{ "node": "Build - CRM Event", "type": "main", "index": 0 }]] },

@@ -135,10 +135,17 @@ Now that the Brain and tools are proven, test the real entry points — this exe
       sales differentiator: an assistant that fails loudly instead of silently.
 
 **Phone (`08` outbound, `09b` inbound) — only if you're on the Pro tier build:**
-- [ ] Outbound: POST to the `09a`/`08` webhook with a test `to_phone` (your own number) and confirm you
-      receive a call with a sensible script
+- [ ] Outbound: POST to the `08` webhook with a test `to_phone` (your own number) and confirm you receive
+      a call **from your test client's own registered Twilio number** (check caller ID), with a sensible
+      script, and that it logs to that client's CRM
 - [ ] Inbound: call your Twilio test number, speak a request, confirm you get a spoken reply and a row in
       the CRM `Interactions` tab
+- [ ] **Wrong-number test**: call a Twilio number that either doesn't exist in the registry yet, or
+      temporarily rename the `twilio_number` value in your test client's row, then call the real number —
+      confirm you get a polite message and a hangup instead of dead air or a dropped call, and confirm an
+      `Error_Log` row shows up so you'd actually notice a client's number got disconnected or reassigned.
+      Repeat by staying on the line past the greeting (so you hit the gather step) if you can reproduce the
+      mismatch mid-call — both entry points need this to degrade gracefully independently.
 
 ## 4. Load/abuse test the Gateway
 

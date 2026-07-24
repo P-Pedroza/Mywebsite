@@ -53,7 +53,7 @@ instead of "somewhere in 14 files."
 | 06 | Tool: Journal | Writes durable facts to Pinecone + a human-readable Google Doc. Rejects and logs empty writes; alerts if spammed. |
 | 07 | CRM | Normalizes any channel event into one Contacts row (upsert) + one Interactions row (append) in Google Sheets. |
 | 08 | Phone (Outbound) | Takes a call request, asks the Brain for a script, places the call via Twilio, logs to CRM. |
-| 09 | Phone (Inbound Receptionist) | Answers Twilio calls, transcribes speech, asks the Brain for a reply, speaks it back, logs to CRM. |
+| 09 | Phone (Inbound Receptionist) | Answers Twilio calls, transcribes speech, asks the Brain for a reply, speaks it back, logs to CRM. A call to an unrecognized/decommissioned number gets a polite hangup and an Error_Log entry instead of crashing the workflow. |
 | 10 | Email Drafter | Asks the Brain to write an email, logs a "pending approval" row, pings you on Telegram. |
 | 11 | Email Approval Handler | Listens for `approve` / `edit` / `cancel` replies in Telegram and updates the approval row. |
 | 12 | Email Sender | Sends the approved email via Gmail with schema validation, delayed send, attachments, and automatic retry/escalation. |

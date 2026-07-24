@@ -173,10 +173,39 @@ function execTelegram(node, inputJson, nodeOutputs, stores, trace) {
   return inputJson;
 }
 
+function execTwilio(node, inputJson, nodeOutputs, stores, trace) {
+  const ctx = { json: inputJson, nodeOutputs };
+  const p = node.parameters;
+  const rec = {
+    node: node.name,
+    from: evalExprString(p.from, ctx),
+    to: evalExprString(p.to, ctx),
+    twiml: evalExprString(p.twiml, ctx),
+  };
+  if (stores.twilioShouldFail) {
+    trace.push(`  [twilio] ${node.name} SIMULATED FAILURE calling ${rec.to}`);
+    return { ...inputJson, error: 'Simulated Twilio API failure' };
+  }
+  stores.twilioLog.push(rec);
+  trace.push(`  [twilio] ${node.name} from=${rec.from} to=${rec.to}`);
+  return { ...inputJson };
+}
+
+function execRespondToWebhook(node, inputJson, nodeOutputs, stores, trace) {
+  const ctx = { json: inputJson, nodeOutputs };
+  const p = node.parameters;
+  const body = p.responseBody !== undefined ? evalExprString(p.responseBody, ctx) : undefined;
+  const rec = { node: node.name, respondWith: p.respondWith, body };
+  stores.webhookResponses.push(rec);
+  trace.push(`  [respond] ${node.name} (${p.respondWith}): ${typeof body === 'string' ? body.slice(0, 160) : JSON.stringify(body).slice(0, 160)}`);
+  return inputJson;
+}
+
 function execute(node, inputJson, nodeOutputs, stores, trace) {
   switch (node.type) {
     case 'n8n-nodes-base.executeWorkflowTrigger':
     case 'n8n-nodes-base.telegramTrigger':
+    case 'n8n-nodes-base.webhook':
       return inputJson;
     case 'n8n-nodes-base.set':
       return execSet(node, inputJson, nodeOutputs);
@@ -191,6 +220,10 @@ function execute(node, inputJson, nodeOutputs, stores, trace) {
       return execGmail(node, inputJson, nodeOutputs, stores, trace);
     case 'n8n-nodes-base.telegram':
       return execTelegram(node, inputJson, nodeOutputs, stores, trace);
+    case 'n8n-nodes-base.twilio':
+      return execTwilio(node, inputJson, nodeOutputs, stores, trace);
+    case 'n8n-nodes-base.respondToWebhook':
+      return execRespondToWebhook(node, inputJson, nodeOutputs, stores, trace);
     case 'n8n-nodes-base.wait':
       trace.push(`  [wait] ${node.name} (no-op in simulation)`);
       return inputJson;
@@ -206,6 +239,24 @@ function execute(node, inputJson, nodeOutputs, stores, trace) {
         for (const [k, v] of Object.entries(inputsParam)) resolvedInput[k] = evalExprString(v, ctx);
       }
       trace.push(`  [call] ${node.name} -> ${targetName} with ${JSON.stringify(resolvedInput)}`);
+      // 02_YTUMA_Brain's internals are a real LLM agent (OpenAI/Pinecone langchain nodes) that this
+      // simulator can't call - it's mocked as a black box here (its Drive/Merge wiring was verified
+      // separately). Every other sub-workflow runs for real.
+      if (targetName === '02_YTUMA_Brain') {
+        stores.brainLog = stores.brainLog || [];
+        stores.brainLog.push({ node: node.name, input: resolvedInput });
+        const output = typeof stores.brainOutput === 'function' ? stores.brainOutput(resolvedInput) : (stores.brainOutput || 'Hi, this is Sol. How can I help you today?');
+        trace.push(`  [brain-mock] ${node.name} -> "${output}"`);
+        return { success: true, output, meta: { client_id: resolvedInput.client_id, source: resolvedInput.source } };
+      }
+      if (node.onError === 'continueErrorOutput') {
+        try {
+          return runWorkflow(targetName, resolvedInput, stores, trace, '  ');
+        } catch (err) {
+          trace.push(`  [call] ${node.name} -> ${targetName} FAILED (continueErrorOutput): ${err.message}`);
+          return { ...inputJson, error: err.message };
+        }
+      }
       return runWorkflow(targetName, resolvedInput, stores, trace, '  ');
     }
     default:
@@ -249,14 +300,31 @@ function setWorkflows(byName) {
   workflowsByName = byName;
 }
 
-function runWorkflow(workflowName, inputJson, stores, trace, indent) {
+const TRIGGER_TYPES = new Set([
+  'n8n-nodes-base.executeWorkflowTrigger',
+  'n8n-nodes-base.telegramTrigger',
+  'n8n-nodes-base.webhook',
+]);
+
+// startNodeName is required for workflows with more than one trigger/webhook node
+// (e.g. 09_Phone_Inbound_Receptionist has "Start - Phone Inbound" AND "Handle - Phone Gather" -
+// two separate Twilio callback URLs in the same workflow file).
+function runWorkflow(workflowName, inputJson, stores, trace, indent, startNodeName) {
   const wf = workflowsByName[workflowName];
   if (!wf) throw new Error('Unknown workflow: ' + workflowName);
   const nodesByName = {};
   wf.nodes.forEach(n => { nodesByName[n.name] = n; });
-  const trigger = wf.nodes.find(n => n.type === 'n8n-nodes-base.executeWorkflowTrigger' || n.type === 'n8n-nodes-base.telegramTrigger');
+  let startName = startNodeName;
+  if (!startName) {
+    const candidates = wf.nodes.filter(n => TRIGGER_TYPES.has(n.type));
+    if (candidates.length > 1) {
+      throw new Error(`Workflow "${workflowName}" has ${candidates.length} possible entry points (${candidates.map(n => n.name).join(', ')}) - pass startNodeName to runWorkflow to pick one.`);
+    }
+    if (candidates.length === 0) throw new Error(`Workflow "${workflowName}" has no trigger/webhook node.`);
+    startName = candidates[0].name;
+  }
   const nodeOutputs = {};
-  return traverse(wf, nodesByName, trigger.name, inputJson, nodeOutputs, stores, trace, indent || '');
+  return traverse(wf, nodesByName, startName, inputJson, nodeOutputs, stores, trace, indent || '');
 }
 
 module.exports = { loadWorkflows, setWorkflows, runWorkflow };

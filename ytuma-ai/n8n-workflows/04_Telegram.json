@@ -57,10 +57,12 @@
           "assignments": [
             { "name": "prompt", "value": "={{ $json.message.text }}" },
             { "name": "user_id", "value": "={{ 'telegram_' + $json.message.from.id }}" },
-            { "name": "chat_id", "value": "={{ $json.message.chat.id }}" }
+            { "name": "chat_id", "value": "={{ $json.message.chat.id }}" },
+            { "name": "client_id", "value": "YOUR_CLIENT_ID_HERE" }
           ]
         }
-      }
+      },
+      "notes": "client_id is a FIXED value, not dynamic - each client gets their own bot token and their own copy of this workflow, so this is 'which client's copy is this' baked in once, not looked up per-message."
     },
     {
       "id": "t5",
@@ -98,7 +100,8 @@
           "assignments": [
             { "name": "prompt", "value": "={{ $json.text }}" },
             { "name": "user_id", "value": "={{ 'telegram_' + $('Start - Telegram Inbound').item.json.message.from.id }}" },
-            { "name": "chat_id", "value": "={{ $('Start - Telegram Inbound').item.json.message.chat.id }}" }
+            { "name": "chat_id", "value": "={{ $('Start - Telegram Inbound').item.json.message.chat.id }}" },
+            { "name": "client_id", "value": "YOUR_CLIENT_ID_HERE" }
           ]
         }
       }
@@ -125,7 +128,7 @@
       "position": [-200, 0],
       "parameters": {
         "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
-        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "telegram" } },
+        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "telegram", "client_id": "={{ $json.client_id }}" } },
         "options": { "waitForSubWorkflow": true }
       }
     },

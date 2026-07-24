@@ -19,7 +19,7 @@
         "workflowInputs": {
           "values": [
             { "name": "workflow_name" }, { "name": "node_name" }, { "name": "severity" },
-            { "name": "message" }, { "name": "error_type" }, { "name": "trace_id" }
+            { "name": "message" }, { "name": "error_type" }, { "name": "trace_id" }, { "name": "client_id" }
           ]
         }
       }
@@ -32,7 +32,7 @@
       "position": [-1280, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const isSystemError = !!$json.execution;\nconst src = isSystemError ? {\n  workflow_name: $json.workflow && $json.workflow.name,\n  node_name: $json.node && $json.node.name,\n  severity: 'medium',\n  message: $json.execution && $json.execution.error && $json.execution.error.message,\n  error_type: 'N8N_SYSTEM_ERROR',\n  trace_id: 'trace_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),\n  run_url: $json.execution && $json.execution.url\n} : $json;\n\nconst allowedSeverity = ['high', 'medium', 'low'];\nconst severity = allowedSeverity.includes((src.severity || '').toLowerCase()) ? src.severity.toLowerCase() : 'medium';\n\nreturn [{\n  json: {\n    workflow_name: src.workflow_name || 'UNKNOWN_WORKFLOW',\n    node_name: src.node_name || 'UNKNOWN_NODE',\n    severity,\n    message: src.message || 'Unknown error',\n    error_type: src.error_type || 'APP_ERROR',\n    trace_id: src.trace_id || ('trace_' + Date.now()),\n    run_url: src.run_url || '',\n    schema_version: 1,\n    timestamp: new Date().toISOString(),\n    raw: src\n  }\n}];"
+        "jsCode": "const isSystemError = !!$json.execution;\nconst src = isSystemError ? {\n  workflow_name: $json.workflow && $json.workflow.name,\n  node_name: $json.node && $json.node.name,\n  severity: 'medium',\n  message: $json.execution && $json.execution.error && $json.execution.error.message,\n  error_type: 'N8N_SYSTEM_ERROR',\n  trace_id: 'trace_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10),\n  run_url: $json.execution && $json.execution.url,\n  client_id: 'unknown_client'\n} : $json;\n\nconst allowedSeverity = ['high', 'medium', 'low'];\nconst severity = allowedSeverity.includes((src.severity || '').toLowerCase()) ? src.severity.toLowerCase() : 'medium';\n\nreturn [{\n  json: {\n    workflow_name: src.workflow_name || 'UNKNOWN_WORKFLOW',\n    node_name: src.node_name || 'UNKNOWN_NODE',\n    severity,\n    message: src.message || 'Unknown error',\n    error_type: src.error_type || 'APP_ERROR',\n    trace_id: src.trace_id || ('trace_' + Date.now()),\n    run_url: src.run_url || '',\n    client_id: src.client_id || 'unknown_client',\n    schema_version: 1,\n    timestamp: new Date().toISOString(),\n    raw: src\n  }\n}];"
       }
     },
     {
@@ -55,7 +55,7 @@
       "parameters": {
         "assignments": {
           "assignments": [
-            { "name": "dedupe_key", "value": "={{ [$json.workflow_name, $json.node_name, $json.error_type, $json.message].join('||') }}" }
+            { "name": "dedupe_key", "value": "={{ [$json.client_id, $json.workflow_name, $json.node_name, $json.error_type, $json.message].join('||') }}" }
           ]
         }
       }
@@ -74,6 +74,7 @@
           "value": {
             "timestamp": "={{ $json.timestamp }}",
             "trace_id": "={{ $json.trace_id }}",
+            "client_id": "={{ $json.client_id }}",
             "severity": "={{ $json.severity }}",
             "workflow_name": "={{ $json.workflow_name }}",
             "node_name": "={{ $json.node_name }}",
@@ -188,8 +189,8 @@
         "resource": "message",
         "operation": "send",
         "sendTo": "ADMIN_EMAIL",
-        "subject": "=YTUMA [{{ $json.effective_severity.toUpperCase() }}] {{ $json.workflow_name }} / {{ $json.node_name }}",
-        "message": "=Severity: {{ $json.effective_severity }}\nWorkflow: {{ $json.workflow_name }}\nNode: {{ $json.node_name }}\nMessage: {{ $json.message }}\nTrace: {{ $json.trace_id }}\nRun: {{ $json.run_url }}\nHits (window): {{ $json.hit_count }}"
+        "subject": "=YTUMA [{{ $json.effective_severity.toUpperCase() }}] [{{ $json.client_id }}] {{ $json.workflow_name }} / {{ $json.node_name }}",
+        "message": "=Client: {{ $json.client_id }}\nSeverity: {{ $json.effective_severity }}\nWorkflow: {{ $json.workflow_name }}\nNode: {{ $json.node_name }}\nMessage: {{ $json.message }}\nTrace: {{ $json.trace_id }}\nRun: {{ $json.run_url }}\nHits (window): {{ $json.hit_count }}"
       },
       "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } }
     }

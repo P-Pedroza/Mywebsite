@@ -6,12 +6,57 @@
       "name": "Start - Phone Inbound",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1500, 0],
+      "position": [-1700, 0],
+      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-inbound", "responseMode": "responseNode", "options": {} }
+    },
+    {
+      "id": "i1b",
+      "name": "Normalize Inbound Call",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1480, 0],
       "parameters": {
-        "httpMethod": "POST",
-        "path": "ytuma/phone-inbound",
-        "responseMode": "lastNode",
-        "options": { "responseData": "={{ '<Response><Gather input=\"speech\" action=\"https://YOUR_N8N_HOST/webhook/ytuma/phone-gather\" method=\"POST\" language=\"en-US\" speechTimeout=\"auto\"><Say voice=\"Polly.Joanna\" language=\"en-US\">Hi, this is Sol with YTUMA. Briefly, how can I help you today?</Say></Gather><Say voice=\"Polly.Joanna\" language=\"en-US\">Sorry, I did not catch anything. We will follow up with you later. Goodbye.</Say></Response>' }}", "responseContentType": "text/xml" }
+        "assignments": { "assignments": [
+          { "name": "twilio_number", "value": "={{ ($json.body ? $json.body.To : $json.To) || '' }}" },
+          { "name": "caller", "value": "={{ ($json.body ? $json.body.From : $json.From) || '' }}" }
+        ] }
+      },
+      "notes": "Twilio's 'To' is the number the caller dialed, i.e. which client this call belongs to - resolved next via the registry's reverse lookup."
+    },
+    {
+      "id": "i1c",
+      "name": "Resolve Client Config (Greeting)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1260, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "i1d",
+      "name": "Build Greeting TwiML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1040, 0],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "greeting_xml", "value": "=<Response><Gather input=\"speech\" action=\"https://YOUR_N8N_HOST/webhook/ytuma/phone-gather\" method=\"POST\" language=\"en-US\" speechTimeout=\"auto\"><Say voice=\"Polly.Joanna\" language=\"en-US\">Hi, this is Sol with {{ $json.client_name || 'the office' }}. Briefly, how can I help you today?</Say></Gather><Say voice=\"Polly.Joanna\" language=\"en-US\">Sorry, I did not catch anything. We will follow up with you later. Goodbye.</Say></Response>" }
+        ] }
+      }
+    },
+    {
+      "id": "i1e",
+      "name": "Respond - Greeting",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-820, 0],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.greeting_xml }}",
+        "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
       }
     },
     {
@@ -19,20 +64,21 @@
       "name": "Handle - Phone Gather",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
-      "position": [-1500, 200],
-      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-gather", "responseMode": "lastNode", "options": {} }
+      "position": [-1700, 260],
+      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-gather", "responseMode": "responseNode", "options": {} }
     },
     {
       "id": "i3",
       "name": "Normalize Gather Event",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-1280, 200],
+      "position": [-1480, 260],
       "parameters": {
         "assignments": {
           "assignments": [
             { "name": "message", "value": "={{ $json.body ? $json.body.SpeechResult : $json.SpeechResult || '' }}" },
             { "name": "caller", "value": "={{ $json.body ? $json.body.From : $json.From || '' }}" },
+            { "name": "twilio_number", "value": "={{ $json.body ? $json.body.To : $json.To || '' }}" },
             { "name": "confidence", "value": "={{ $json.body ? $json.body.Confidence : $json.Confidence || '' }}" },
             { "name": "raw_payload", "value": "={{ JSON.stringify($json) }}" }
           ]
@@ -40,17 +86,45 @@
       }
     },
     {
+      "id": "i3b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1260, 260],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "i3c",
+      "name": "Merge - Gather + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1040, 260],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "message", "value": "={{ $('Normalize Gather Event').item.json.message }}" },
+          { "name": "caller", "value": "={{ $('Normalize Gather Event').item.json.caller }}" },
+          { "name": "confidence", "value": "={{ $('Normalize Gather Event').item.json.confidence }}" },
+          { "name": "client_id", "value": "={{ $json.client_id }}" }
+        ] }
+      }
+    },
+    {
       "id": "i4",
       "name": "Call → Sol Brain",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
-      "position": [-1060, 200],
+      "position": [-820, 260],
       "parameters": {
         "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
         "workflowInputs": { "value": {
           "prompt": "=You are Sol, my AI phone receptionist. The caller said: \"{{ $json.message }}\". Caller phone: {{ $json.caller }}. Understand what they want and generate a short, natural spoken reply in their language. Only output reply text, no XML/markdown.",
           "user_id": "=phone_{{ $json.caller }}",
-          "source": "phone"
+          "source": "phone",
+          "client_id": "={{ $json.client_id }}"
         } },
         "options": { "waitForSubWorkflow": true }
       }
@@ -60,13 +134,14 @@
       "name": "Build - Phone Reply",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-840, 200],
+      "position": [-600, 260],
       "parameters": {
         "assignments": {
           "assignments": [
             { "name": "reply_text", "value": "={{ $json.output || 'Thank you for calling. We have received your request and will follow up with you shortly.' }}" },
-            { "name": "caller", "value": "={{ $('Normalize Gather Event').item.json.caller }}" },
-            { "name": "message", "value": "={{ $('Normalize Gather Event').item.json.message }}" },
+            { "name": "caller", "value": "={{ $('Merge - Gather + Config').item.json.caller }}" },
+            { "name": "message", "value": "={{ $('Merge - Gather + Config').item.json.message }}" },
+            { "name": "client_id", "value": "={{ $('Merge - Gather + Config').item.json.client_id }}" },
             { "name": "timestamp", "value": "={{ $now.toISO() }}" }
           ]
         }
@@ -77,10 +152,11 @@
       "name": "Build - CRM Event",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
-      "position": [-620, 200],
+      "position": [-380, 260],
       "parameters": {
         "assignments": {
           "assignments": [
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
             { "name": "timestamp", "value": "={{ $json.timestamp }}" },
             { "name": "contact_phone", "value": "={{ $json.caller }}" },
             { "name": "contact_name", "value": "" },
@@ -103,7 +179,7 @@
       "name": "Log to CRM",
       "type": "n8n-nodes-base.executeWorkflow",
       "typeVersion": 1.2,
-      "position": [-400, 200],
+      "position": [-160, 260],
       "parameters": {
         "workflowId": { "value": "07_YTUMA_CRM_Sheets", "cachedResultName": "07_YTUMA_CRM_Sheets" },
         "workflowInputs": { "value": "={{ $json }}" }
@@ -114,7 +190,7 @@
       "name": "Respond-Twilio",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [-180, 200],
+      "position": [60, 260],
       "parameters": {
         "respondWith": "text",
         "responseBody": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">{{ $('Build - Phone Reply').item.json.reply_text }}</Say></Response>",
@@ -123,8 +199,14 @@
     }
   ],
   "connections": {
+    "Start - Phone Inbound": { "main": [[{ "node": "Normalize Inbound Call", "type": "main", "index": 0 }]] },
+    "Normalize Inbound Call": { "main": [[{ "node": "Resolve Client Config (Greeting)", "type": "main", "index": 0 }]] },
+    "Resolve Client Config (Greeting)": { "main": [[{ "node": "Build Greeting TwiML", "type": "main", "index": 0 }]] },
+    "Build Greeting TwiML": { "main": [[{ "node": "Respond - Greeting", "type": "main", "index": 0 }]] },
     "Handle - Phone Gather": { "main": [[{ "node": "Normalize Gather Event", "type": "main", "index": 0 }]] },
-    "Normalize Gather Event": { "main": [[{ "node": "Call → Sol Brain", "type": "main", "index": 0 }]] },
+    "Normalize Gather Event": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Merge - Gather + Config", "type": "main", "index": 0 }]] },
+    "Merge - Gather + Config": { "main": [[{ "node": "Call → Sol Brain", "type": "main", "index": 0 }]] },
     "Call → Sol Brain": { "main": [[{ "node": "Build - Phone Reply", "type": "main", "index": 0 }]] },
     "Build - Phone Reply": { "main": [[{ "node": "Build - CRM Event", "type": "main", "index": 0 }]] },
     "Build - CRM Event": { "main": [[{ "node": "Log to CRM", "type": "main", "index": 0 }]] },

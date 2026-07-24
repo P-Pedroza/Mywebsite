@@ -14,7 +14,7 @@
             { "name": "contact_email" }, { "name": "contact_type" }, { "name": "channel" },
             { "name": "direction" }, { "name": "summary" }, { "name": "full_message" },
             { "name": "next_action" }, { "name": "stage" }, { "name": "tags" },
-            { "name": "handled_by" }, { "name": "preferred_language" }
+            { "name": "handled_by" }, { "name": "preferred_language" }, { "name": "client_id" }
           ]
         }
       }
@@ -41,7 +41,49 @@
             { "name": "stage", "value": "={{ $json.stage || 'Lead' }}" },
             { "name": "tags", "value": "={{ $json.tags || '' }}" },
             { "name": "handled_by", "value": "={{ $json.handled_by || 'sol' }}" },
-            { "name": "preferred_language", "value": "={{ $json.preferred_language || 'en' }}" }
+            { "name": "preferred_language", "value": "={{ $json.preferred_language || 'en' }}" },
+            { "name": "client_id", "value": "={{ $json.client_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "crm2b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-970, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "crm2c",
+      "name": "Merge - Event + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-940, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "timestamp", "value": "={{ $('Normalize - CRM Event').item.json.timestamp }}" },
+            { "name": "contact_phone", "value": "={{ $('Normalize - CRM Event').item.json.contact_phone }}" },
+            { "name": "contact_name", "value": "={{ $('Normalize - CRM Event').item.json.contact_name }}" },
+            { "name": "contact_email", "value": "={{ $('Normalize - CRM Event').item.json.contact_email }}" },
+            { "name": "contact_type", "value": "={{ $('Normalize - CRM Event').item.json.contact_type }}" },
+            { "name": "channel", "value": "={{ $('Normalize - CRM Event').item.json.channel }}" },
+            { "name": "direction", "value": "={{ $('Normalize - CRM Event').item.json.direction }}" },
+            { "name": "summary", "value": "={{ $('Normalize - CRM Event').item.json.summary }}" },
+            { "name": "full_message", "value": "={{ $('Normalize - CRM Event').item.json.full_message }}" },
+            { "name": "next_action", "value": "={{ $('Normalize - CRM Event').item.json.next_action }}" },
+            { "name": "stage", "value": "={{ $('Normalize - CRM Event').item.json.stage }}" },
+            { "name": "tags", "value": "={{ $('Normalize - CRM Event').item.json.tags }}" },
+            { "name": "handled_by", "value": "={{ $('Normalize - CRM Event').item.json.handled_by }}" },
+            { "name": "preferred_language", "value": "={{ $('Normalize - CRM Event').item.json.preferred_language }}" },
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
+            { "name": "crm_sheet_id", "value": "={{ $json.crm_sheet_id }}" }
           ]
         }
       }
@@ -54,11 +96,12 @@
       "position": [-860, -60],
       "parameters": {
         "operation": "appendOrUpdate",
-        "documentId": { "value": "YTUMA_CRM_SHEET_ID" },
+        "documentId": { "value": "={{ $json.crm_sheet_id }}" },
         "sheetName": { "value": "Contacts" },
         "columns": {
           "matchingColumns": ["contact_phone"],
           "value": {
+            "client_id": "={{ $json.client_id }}",
             "contact_phone": "={{ $json.contact_phone }}",
             "contact_name": "={{ $json.contact_name }}",
             "contact_email": "={{ $json.contact_email }}",
@@ -84,10 +127,11 @@
       "position": [-860, 100],
       "parameters": {
         "operation": "append",
-        "documentId": { "value": "YTUMA_CRM_SHEET_ID" },
+        "documentId": { "value": "={{ $json.crm_sheet_id }}" },
         "sheetName": { "value": "Interactions" },
         "columns": {
           "value": {
+            "client_id": "={{ $json.client_id }}",
             "timestamp": "={{ $json.timestamp }}",
             "contact_phone": "={{ $json.contact_phone }}",
             "contact_name": "={{ $json.contact_name }}",
@@ -118,7 +162,8 @@
             { "name": "summary", "value": "Testing CRM pipeline." },
             { "name": "full_message", "value": "Testing contact details." },
             { "name": "next_action", "value": "Follow-up tomorrow." },
-            { "name": "handled_by", "value": "sol" }
+            { "name": "handled_by", "value": "sol" },
+            { "name": "client_id", "value": "YOUR_TEST_CLIENT_ID" }
           ]
         }
       },
@@ -127,7 +172,9 @@
   ],
   "connections": {
     "Start - CRM Event": { "main": [[{ "node": "Normalize - CRM Event", "type": "main", "index": 0 }]] },
-    "Normalize - CRM Event": {
+    "Normalize - CRM Event": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Merge - Event + Config", "type": "main", "index": 0 }]] },
+    "Merge - Event + Config": {
       "main": [[
         { "node": "Contacts - Upsert", "type": "main", "index": 0 },
         { "node": "Interactions - Append", "type": "main", "index": 0 }

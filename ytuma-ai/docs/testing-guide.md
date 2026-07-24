@@ -10,14 +10,19 @@ nothing and keeps debug traffic out of production data.
 
 ## 0. Before you test anything
 
-- [ ] Import all 14 workflows in the order listed in `n8n-workflows/README.md`
+- [ ] Import all 16 workflows in the order listed in `n8n-workflows/README.md` — **`00_Client_Registry`
+      first**, everything else calls it
 - [ ] Re-select the target workflow inside every `Execute Workflow` node (n8n won't resolve the link from
-      the raw JSON alone — do this once per link, per workflow)
+      the raw JSON alone — do this once per link, per workflow); for the ones with a *dynamic* workflow ID
+      (`Send Approved Email` in 11, which reads `email_sender_workflow_id` from the registry) there's
+      nothing to re-select, just make sure that registry column's value matches a real workflow name
 - [ ] Create every credential listed in that README
-- [ ] Replace every placeholder ID (`grep -rn "_FILE_ID\|_SHEET_ID\|_DOC_ID\|ADMIN_" n8n-workflows/` from
-      the repo root will list them all)
-- [ ] Create the actual Google Sheets/Docs the placeholders point to, with the exact tab names the
-      workflows expect: `Contacts` + `Interactions` (CRM sheet), `Sheet1` (email approvals),
+- [ ] Create the `YTUMA_Client_Registry` sheet (schema in the n8n README) and add **one test client row** —
+      every workflow below needs a valid `client_id` to run against
+- [ ] Replace `YTUMA_CLIENT_REGISTRY_SHEET_ID` in `00_Client_Registry.json` and `ADMIN_EMAIL` in
+      `99_Error_Handler.json` — these two stay hardcoded on purpose (see the n8n README)
+- [ ] Create the actual Google Sheets/Docs your test client's registry row points to, with the exact tab
+      names the workflows expect: `Contacts` + `Interactions` (CRM sheet), `Sheet1` (email approvals),
       `Error_Log` + `Alert_Dedupe` (observability sheet)
 
 ## 1. Test the Brain alone (no channels, no tools required to pass)
@@ -45,28 +50,45 @@ everything downstream in a way that's harder to diagnose.
 n8n lets you execute a single node with a manual test payload — right-click the trigger node → "Execute
 step" (or use a temporary Manual Trigger wired to the same input) — no need to go through the Brain yet.
 
+Every tool below now requires `client_id` — use whatever slug you put in your test row in
+`YTUMA_Client_Registry`. If you get "no active client found," that's `00_Client_Registry` doing its job:
+check the row exists and the `client_id` matches exactly (case-sensitive).
+
+**`00_Client_Registry`** — test this one first, standalone: trigger it with just `{ "client_id": "your-test-client" }`
+and confirm it returns `found: true` with every column from your test row. Then try a `client_id` that
+doesn't exist and confirm it throws the "no active client found" error rather than silently returning
+empty/wrong data — that error is what protects you from one client's request accidentally touching another
+client's calendar or CRM.
+
 **`03_Tool_Calendar`** — feed it:
 ```json
-{ "action": "check_availability", "start_time": "2026-08-01T14:00:00-05:00", "end_time": "2026-08-01T15:00:00-05:00" }
+{ "client_id": "your-test-client", "action": "check_availability", "start_time": "2026-08-01T14:00:00-05:00", "end_time": "2026-08-01T15:00:00-05:00" }
 ```
 Pass: returns `{ "success": true, "availability": ... }` without error. Then try `add_event` with a
-`summary` and confirm the event actually appears on the real Google Calendar.
+`summary` and confirm the event actually appears on **your test client's** Google Calendar (the one in the
+registry row), not some other calendar.
 
-**`07_CRM_Sheets`** — use the built-in `Test - Sample Event` node (right-click → Execute Node). Confirm a
-row appears in both the `Contacts` tab (upserted) and `Interactions` tab (appended) of your CRM sheet.
+**`07_CRM_Sheets`** — the built-in `Test - Sample Event` node ships with a placeholder
+`client_id: "YOUR_TEST_CLIENT_ID"` — edit that to your real test client_id, then right-click → Execute
+Node. Confirm a row appears in both the `Contacts` tab (upserted) and `Interactions` tab (appended) of
+**that client's** CRM sheet.
 
-**`06_Tool_Journal`** — manually trigger with `{ "note_to_add": "Test note - ignore", "user_id": "test" }`.
-Confirm it appears in your journal Google Doc AND as a new vector in the `ytuma-memory-v3` Pinecone index
-(check the Pinecone console). Then trigger again with an **empty** `note_to_add` and confirm it logs to
-the rejections doc instead of writing garbage to memory.
+**`06_Tool_Journal`** — manually trigger with `{ "note_to_add": "Test note - ignore", "user_id": "test", "client_id": "your-test-client" }`.
+Confirm it appears in your test client's journal Google Doc AND as a new vector in the `ytuma-memory-v3`
+Pinecone index, under the namespace matching that client's `pinecone_namespace` (check the Pinecone
+console's namespace breakdown). Then trigger again with an **empty** `note_to_add` and confirm it logs to
+that client's rejections doc instead of writing garbage to memory.
 
 **`99_Error_Handler`** — use `Start - Manual Test Trigger` with:
 ```json
-{ "workflow_name": "test", "node_name": "test_node", "severity": "high", "message": "Test error", "error_type": "TEST", "trace_id": "test-001" }
+{ "workflow_name": "test", "node_name": "test_node", "severity": "high", "message": "Test error", "error_type": "TEST", "trace_id": "test-001", "client_id": "your-test-client" }
 ```
-Pass: a row appears in `Error_Log`, a row appears in `Alert_Dedupe`, and you get an email alert (severity
-high should always notify on first occurrence). Run it 3 times in under 10 minutes with the same payload
-and confirm you get exactly one email (cooldown working), not three.
+Pass: a row appears in `Error_Log` with `client_id` populated, a row appears in `Alert_Dedupe`, and you get
+an email alert whose subject includes `[your-test-client]` (severity high should always notify on first
+occurrence). Run it 3 times in under 10 minutes with the same payload and confirm you get exactly one email
+(cooldown working), not three. Then run it once more with a **different** `client_id` and confirm it's
+treated as a brand-new incident (separate dedupe row, separate email) rather than being folded into the
+first client's count.
 
 **`98_Retry_Engine`** — trigger with `{ "workflow_name": "test", "severity": "low", "attempt": 0 }` a few
 times in a row, incrementing nothing yourself — confirm `attempt` increments each call and that after 3
@@ -77,6 +99,9 @@ calls (default `max_attempts`) it returns `action: "stop"` instead of retrying f
 Now that the Brain and tools are proven, test the real entry points — this exercises `01_Gateway` too.
 
 **Telegram (production `04_Telegram`):**
+- [ ] Before testing: confirm you set `client_id` to your real test client's slug (not the
+      `YOUR_CLIENT_ID_HERE` placeholder) in both `Format - Text` and `Format - Voice`, and that the
+      credential points at your **test** bot token, not a real client's bot
 - [ ] Send plain text → get a reply
 - [ ] Send a voice note → get a reply that reflects what you said (proves Whisper transcription works)
 - [ ] Send a photo or sticker → get the "I only understand text and voice" fallback, not silence or an error
@@ -103,18 +128,32 @@ Now that the Brain and tools are proven, test the real entry points — this exe
 
 ## 4. Load/abuse test the Gateway
 
-- [ ] Send 4+ messages within 10 seconds from the same `user_id` and confirm the 4th gets rate-limited
-      (check `rate_limited: true` in the execution data, or add a temporary reply-back of the rate-limit
-      reason so you can see it without digging through logs)
+- [ ] POST to the Gateway webhook **without** `client_id` and confirm it's rejected with the "Missing
+      client_id" error rather than silently defaulting to some client
+- [ ] Send 4+ messages within 10 seconds from the same `user_id` + `client_id` and confirm the 4th gets
+      rate-limited (check `rate_limited: true` in the execution data, or add a temporary reply-back of the
+      rate-limit reason so you can see it without digging through logs)
 - [ ] Send a message containing `<script>alert(1)</script>` and confirm it's stripped before reaching the
       Brain (check the sanitized `prompt` in the Gateway's execution output)
 - [ ] Send one of your test "blocked words" (edit the placeholder list in `01_Gateway.json`'s
       `Content_Filter_Profanity` node to something you can safely trigger) and confirm it's censored
 
+## 4b. The tenant-isolation test (do this if you're onboarding a second client)
+
+Add a **second** test row to `YTUMA_Client_Registry` (a different `client_id`, its own test Calendar/Sheet/
+Doc/Pinecone namespace). Then:
+- [ ] Ask client A's assistant something that would only be answerable from client B's knowledge base or
+      calendar, and confirm it can't see it (no leakage across the `pinecone_namespace` boundary)
+- [ ] Trigger the same simulated error for both clients back-to-back and confirm they produce **two**
+      separate dedupe rows/alerts in `99_Error_Handler`, not one merged count
+- [ ] Book a calendar event for client A and confirm it lands on client A's calendar (from the registry),
+      not client B's — this is the one that actually matters if you ever fat-finger a registry row
+
 ## 5. Sign-off checklist before a real client touches it
 
 - [ ] All of section 1–4 pass
-- [ ] Every placeholder ID replaced (re-run the grep from step 0 — it should return nothing)
+- [ ] That client has a complete row in `YTUMA_Client_Registry` — every column filled, no leftover
+      placeholder text
 - [ ] Admin alert email/Telegram chat ID actually goes to a channel you monitor, not a burner
 - [ ] You've personally read `business/service-agreement-template.md`'s liability section with a lawyer
       if this is going in front of a paying client

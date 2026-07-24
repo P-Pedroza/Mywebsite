@@ -10,7 +10,8 @@
       "parameters": {
         "workflowInputs": { "values": [
           { "name": "to" }, { "name": "subject" }, { "name": "body" },
-          { "name": "attachments" }, { "name": "send_at" }, { "name": "retry_policy" }, { "name": "trace_id" }
+          { "name": "attachments" }, { "name": "send_at" }, { "name": "retry_policy" }, { "name": "trace_id" },
+          { "name": "client_id" }
         ] }
       }
     },
@@ -22,8 +23,42 @@
       "position": [-1380, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const { to, subject, body } = $json;\nif (!to || !subject || !body) {\n  throw new Error('Missing required field(s): to, subject, body are all required.');\n}\nreturn [{ json: { ...$json, trace_id: $json.trace_id || ('trace_' + Date.now()), attempt: $json.attempt || 0 } }];"
+        "jsCode": "const { to, subject, body, client_id } = $json;\nif (!to || !subject || !body) {\n  throw new Error('Missing required field(s): to, subject, body are all required.');\n}\nif (!client_id || !client_id.toString().trim()) {\n  throw new Error('Missing client_id - every send must say which client tenant it belongs to.');\n}\nreturn [{ json: { ...$json, trace_id: $json.trace_id || ('trace_' + Date.now()), attempt: $json.attempt || 0 } }];"
       }
+    },
+    {
+      "id": "s1b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1270, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "s1c",
+      "name": "Merge - Payload + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1220, 0],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "to", "value": "={{ $('Schema Guard - Email Payload').item.json.to }}" },
+          { "name": "subject", "value": "={{ $('Schema Guard - Email Payload').item.json.subject }}" },
+          { "name": "body", "value": "={{ $('Schema Guard - Email Payload').item.json.body }}" },
+          { "name": "attachments", "value": "={{ $('Schema Guard - Email Payload').item.json.attachments }}" },
+          { "name": "send_at", "value": "={{ $('Schema Guard - Email Payload').item.json.send_at }}" },
+          { "name": "retry_policy", "value": "={{ $('Schema Guard - Email Payload').item.json.retry_policy }}" },
+          { "name": "trace_id", "value": "={{ $('Schema Guard - Email Payload').item.json.trace_id }}" },
+          { "name": "attempt", "value": "={{ $('Schema Guard - Email Payload').item.json.attempt }}" },
+          { "name": "client_id", "value": "={{ $json.client_id }}" },
+          { "name": "reply_to", "value": "={{ $json.admin_email }}" }
+        ] }
+      },
+      "notes": "Default (shared credential) model: your Gmail account sends the message, Reply-To is set to the client's own address so responses land with them. Pro tier: point email_sender_workflow_id at a per-client copy of this workflow with the client's own Gmail credential instead."
     },
     {
       "id": "s3",
@@ -66,7 +101,10 @@
         "sendTo": "={{ $json.to }}",
         "subject": "={{ $json.subject }}",
         "message": "={{ $json.body }}",
-        "options": { "attachmentsUi": { "attachmentsBinary": [{ "property": "={{ Object.keys($binary || {}).join(',') }}" }] } }
+        "options": {
+          "replyTo": "={{ $json.reply_to }}",
+          "attachmentsUi": { "attachmentsBinary": [{ "property": "={{ Object.keys($binary || {}).join(',') }}" }] }
+        }
       },
       "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } },
       "onError": "continueErrorOutput"
@@ -108,9 +146,10 @@
           { "name": "severity", "value": "medium" },
           { "name": "message", "value": "={{ $json.error || 'Gmail send failed' }}" },
           { "name": "error_type", "value": "EMAIL_SEND_FAILURE" },
-          { "name": "trace_id", "value": "={{ $('Schema Guard - Email Payload').item.json.trace_id }}" },
-          { "name": "attempt", "value": "={{ $('Schema Guard - Email Payload').item.json.attempt }}" },
-          { "name": "retry_policy", "value": "={{ $('Schema Guard - Email Payload').item.json.retry_policy }}" }
+          { "name": "client_id", "value": "={{ $('Merge - Payload + Config').item.json.client_id }}" },
+          { "name": "trace_id", "value": "={{ $('Merge - Payload + Config').item.json.trace_id }}" },
+          { "name": "attempt", "value": "={{ $('Merge - Payload + Config').item.json.attempt }}" },
+          { "name": "retry_policy", "value": "={{ $('Merge - Payload + Config').item.json.retry_policy }}" }
         ] }
       }
     },
@@ -142,12 +181,14 @@
       "position": [620, 20],
       "parameters": {
         "assignments": { "assignments": [
-          { "name": "to", "value": "={{ $('Schema Guard - Email Payload').item.json.to }}" },
-          { "name": "subject", "value": "={{ $('Schema Guard - Email Payload').item.json.subject }}" },
-          { "name": "body", "value": "={{ $('Schema Guard - Email Payload').item.json.body }}" },
-          { "name": "attachments", "value": "={{ $('Schema Guard - Email Payload').item.json.attachments }}" },
+          { "name": "to", "value": "={{ $('Merge - Payload + Config').item.json.to }}" },
+          { "name": "subject", "value": "={{ $('Merge - Payload + Config').item.json.subject }}" },
+          { "name": "body", "value": "={{ $('Merge - Payload + Config').item.json.body }}" },
+          { "name": "attachments", "value": "={{ $('Merge - Payload + Config').item.json.attachments }}" },
+          { "name": "reply_to", "value": "={{ $('Merge - Payload + Config').item.json.reply_to }}" },
+          { "name": "client_id", "value": "={{ $('Merge - Payload + Config').item.json.client_id }}" },
           { "name": "attempt", "value": "={{ $json.attempt }}" },
-          { "name": "retry_policy", "value": "={{ $('Schema Guard - Email Payload').item.json.retry_policy }}" },
+          { "name": "retry_policy", "value": "={{ $('Merge - Payload + Config').item.json.retry_policy }}" },
           { "name": "trace_id", "value": "={{ $json.trace_id }}" }
         ] }
       }
@@ -169,7 +210,9 @@
   ],
   "connections": {
     "Start - Send Request": { "main": [[{ "node": "Schema Guard - Email Payload", "type": "main", "index": 0 }]] },
-    "Schema Guard - Email Payload": { "main": [[{ "node": "Delay Router", "type": "main", "index": 0 }]] },
+    "Schema Guard - Email Payload": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Merge - Payload + Config", "type": "main", "index": 0 }]] },
+    "Merge - Payload + Config": { "main": [[{ "node": "Delay Router", "type": "main", "index": 0 }]] },
     "Delay Router": {
       "main": [
         [{ "node": "WAIT", "type": "main", "index": 0 }],

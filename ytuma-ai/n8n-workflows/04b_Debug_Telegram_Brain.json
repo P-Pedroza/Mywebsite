@@ -21,7 +21,8 @@
         "assignments": {
           "assignments": [
             { "name": "prompt", "value": "={{ $json.message.text }}" },
-            { "name": "user_id", "value": "={{ 'telegram_' + $json.message.from.id }}" }
+            { "name": "user_id", "value": "={{ 'telegram_' + $json.message.from.id }}" },
+            { "name": "client_id", "value": "YOUR_TEST_CLIENT_ID" }
           ]
         },
         "options": { "dotNotation": false }
@@ -36,7 +37,7 @@
       "position": [-460, 0],
       "parameters": {
         "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
-        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "debug" } },
+        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "debug", "client_id": "={{ $json.client_id }}" } },
         "options": { "waitForSubWorkflow": true }
       }
     },

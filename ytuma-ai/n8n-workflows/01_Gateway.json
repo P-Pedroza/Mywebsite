@@ -30,7 +30,7 @@
       "position": [-900, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const MAX_PROMPT_LENGTH = 2000;\nconst body = $json.body || $json || {};\nlet { prompt, user_id, source } = body;\n\nif (!prompt || !prompt.toString().trim()) {\n  throw new Error('Missing or empty \"prompt\" field.');\n}\n\nlet cleanPrompt = prompt.toString().trim();\ncleanPrompt = cleanPrompt\n  .replace(/<script[\\s\\S]*?>[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<[^>]+>/g, '');\n\nif (cleanPrompt.length > MAX_PROMPT_LENGTH) {\n  cleanPrompt = cleanPrompt.slice(0, MAX_PROMPT_LENGTH);\n}\n\nconst cleanUserId = (user_id && user_id.toString().trim()) || 'anonymous';\nconst cleanSource = (source && source.toString().trim().toLowerCase()) || 'web';\n\nreturn [{\n  json: {\n    prompt: cleanPrompt,\n    user_id: cleanUserId,\n    source: cleanSource,\n    received_at: new Date().toISOString()\n  }\n}];"
+        "jsCode": "const MAX_PROMPT_LENGTH = 2000;\nconst body = $json.body || $json || {};\nlet { prompt, user_id, source, client_id } = body;\n\nif (!prompt || !prompt.toString().trim()) {\n  throw new Error('Missing or empty \"prompt\" field.');\n}\nif (!client_id || !client_id.toString().trim()) {\n  throw new Error('Missing \"client_id\". Every request must say which client tenant it belongs to - this is not optional in a multi-client deployment.');\n}\n\nlet cleanPrompt = prompt.toString().trim();\ncleanPrompt = cleanPrompt\n  .replace(/<script[\\s\\S]*?>[\\s\\S]*?<\\/script>/gi, '')\n  .replace(/<[^>]+>/g, '');\n\nif (cleanPrompt.length > MAX_PROMPT_LENGTH) {\n  cleanPrompt = cleanPrompt.slice(0, MAX_PROMPT_LENGTH);\n}\n\nconst cleanUserId = (user_id && user_id.toString().trim()) || 'anonymous';\nconst cleanSource = (source && source.toString().trim().toLowerCase()) || 'web';\nconst cleanClientId = client_id.toString().trim();\n\nreturn [{\n  json: {\n    prompt: cleanPrompt,\n    user_id: cleanUserId,\n    source: cleanSource,\n    client_id: cleanClientId,\n    received_at: new Date().toISOString()\n  }\n}];"
       }
     },
     {
@@ -41,7 +41,7 @@
       "position": [-680, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "const data = this.getWorkflowStaticData('global');\nconst userId = $json.user_id;\nconst now = Date.now();\n\nif (!data.rateHistory) data.rateHistory = {};\nif (!data.rateHistory[userId]) data.rateHistory[userId] = [];\n\ndata.rateHistory[userId] = data.rateHistory[userId].filter(ts => now - ts < 60 * 60 * 1000);\n\nconst last10s = data.rateHistory[userId].filter(ts => now - ts < 10 * 1000).length;\nconst lastHour = data.rateHistory[userId].length;\n\nlet rate_limited = false;\nlet rate_reason = null;\n\nif (last10s >= 3) {\n  rate_limited = true;\n  rate_reason = 'Too many requests in a short window. Slow down.';\n} else if (lastHour >= 60) {\n  rate_limited = true;\n  rate_reason = 'Hourly request limit reached.';\n} else {\n  data.rateHistory[userId].push(now);\n}\n\nreturn [{ json: { ...$json, rate_limited, rate_reason } }];"
+        "jsCode": "const data = this.getWorkflowStaticData('global');\n// Namespaced by client_id so one tenant's volume never counts against another's quota,\n// and so two clients' users can never collide into the same bucket.\nconst userId = $json.client_id + ':' + $json.user_id;\nconst now = Date.now();\n\nif (!data.rateHistory) data.rateHistory = {};\nif (!data.rateHistory[userId]) data.rateHistory[userId] = [];\n\ndata.rateHistory[userId] = data.rateHistory[userId].filter(ts => now - ts < 60 * 60 * 1000);\n\nconst last10s = data.rateHistory[userId].filter(ts => now - ts < 10 * 1000).length;\nconst lastHour = data.rateHistory[userId].length;\n\nlet rate_limited = false;\nlet rate_reason = null;\n\nif (last10s >= 3) {\n  rate_limited = true;\n  rate_reason = 'Too many requests in a short window. Slow down.';\n} else if (lastHour >= 60) {\n  rate_limited = true;\n  rate_reason = 'Hourly request limit reached.';\n} else {\n  data.rateHistory[userId].push(now);\n}\n\nreturn [{ json: { ...$json, rate_limited, rate_reason } }];"
       }
     },
     {
@@ -83,6 +83,7 @@
             "prompt": "={{ $json.prompt }}",
             "user_id": "={{ $json.user_id }}",
             "source": "={{ $json.source }}",
+            "client_id": "={{ $json.client_id }}",
             "meta": "={{ { received_at: $json.received_at, rate_limited: $json.rate_limited, rate_reason: $json.rate_reason, moderation_flagged: $json.moderation_flagged, moderation_reason: $json.moderation_reason, source: $json.source } }}"
           }
         },

@@ -13,10 +13,24 @@
             { "name": "prompt" },
             { "name": "user_id" },
             { "name": "source" },
+            { "name": "client_id" },
             { "name": "meta" }
           ]
         }
       }
+    },
+    {
+      "id": "b0",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1500, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "Resolves every per-client resource ID (calendar, sheets, docs, Pinecone namespace, Drive file IDs) in one lookup so nothing below has to hardcode a tenant."
     },
     {
       "id": "b2",
@@ -26,11 +40,11 @@
       "position": [-1360, -300],
       "parameters": {
         "operation": "download",
-        "fileId": { "value": "ALEX_PROFILE_FILE_ID" },
+        "fileId": { "value": "={{ $json.alex_profile_file_id }}" },
         "options": { "binaryPropertyName": "data" }
       },
       "notesInFlow": true,
-      "notes": "Replace ALEX_PROFILE_FILE_ID with your Drive file ID."
+      "notes": "File ID comes from the Client Registry lookup - per-client, not hardcoded."
     },
     {
       "id": "b2x",
@@ -56,7 +70,7 @@
       "position": [-1360, -180],
       "parameters": {
         "operation": "download",
-        "fileId": { "value": "PREFERENCES_FILE_ID" },
+        "fileId": { "value": "={{ $json.preferences_file_id }}" },
         "options": { "binaryPropertyName": "data" }
       }
     },
@@ -84,7 +98,7 @@
       "position": [-1360, -60],
       "parameters": {
         "operation": "download",
-        "fileId": { "value": "PATTERNS_FILE_ID" },
+        "fileId": { "value": "={{ $json.patterns_file_id }}" },
         "options": { "binaryPropertyName": "data" }
       }
     },
@@ -112,7 +126,7 @@
       "position": [-1360, 60],
       "parameters": {
         "operation": "download",
-        "fileId": { "value": "MEMORY_LOG_FILE_ID" },
+        "fileId": { "value": "={{ $json.memory_log_file_id }}" },
         "options": { "binaryPropertyName": "data" }
       }
     },
@@ -140,7 +154,7 @@
       "position": [-1360, 180],
       "parameters": {
         "operation": "download",
-        "fileId": { "value": "SOL_LEARNINGS_FILE_ID" },
+        "fileId": { "value": "={{ $json.sol_learnings_file_id }}" },
         "options": { "binaryPropertyName": "data" }
       }
     },
@@ -177,7 +191,7 @@
       "position": [-900, 0],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Pulls the trigger item (prompt/user_id/source/meta) which is item 0 from 02_Brain_Start\nconst trigger = $('02_Brain_Start').first().json;\nconst now = new Date();\n\n// $json here is the single merged item out of Merge_Profile_Docs, carrying all 5\n// named fields written by the Rename - * nodes. Falls back gracefully if a Drive\n// file ID hasn't been wired yet so the workflow still runs during setup.\nconst alexProfile = $json.alex_profile || '(profile not loaded)';\nconst preferences = $json.preferences || '(preferences not loaded)';\nconst patterns = $json.patterns || '(patterns not loaded)';\nconst memoryLog = $json.memory_log || '(memory log not loaded)';\nconst solLearnings = $json.sol_learnings || '(learnings not loaded)';\n\nconst system_message = `\nDATE & TIME: ${now.toISOString()}\n\nUSER CORE PROFILE:\n${alexProfile}\n\nUSER PREFERENCES:\n${preferences}\n\nOBSERVED PATTERNS:\n${patterns}\n\nMEMORY LOG (RECENT FACTS):\n${memoryLog}\n\nSOL INTERNAL JOURNAL:\n${solLearnings}\n\nPROTOCOL:\n- You are Sol, a bilingual (English/Spanish) AI executive assistant for the business owner.\n- Use the knowledge_base tool before answering questions about internal docs, pricing, or process.\n- Use the calendar tool for anything scheduling-related. Never guess availability.\n- Use update_profile to save durable new facts about the user (not small talk).\n- Match the user's language (English/Spanish/Spanglish).\n- Keep phone/voice replies short, natural, and professional. No markdown in voice replies.\n- Never fabricate calendar events, contacts, or emails. If a tool fails, say so plainly.\n\nSource: ${trigger.source || 'unknown'}\nModeration flagged: ${trigger.meta && trigger.meta.moderation_flagged}\nRate limited: ${trigger.meta && trigger.meta.rate_limited}\n`.trim();\n\nreturn [{ json: { system_message, prompt: trigger.prompt, user_id: trigger.user_id, source: trigger.source } }];"
+        "jsCode": "// Pulls the trigger item (prompt/user_id/source/meta) which is item 0 from 02_Brain_Start\nconst trigger = $('02_Brain_Start').first().json;\n// Pulls the resolved per-client config (calendar/sheet/doc IDs, Pinecone namespace, etc.)\nconst config = $('Resolve Client Config').first().json;\nconst now = new Date();\n\n// $json here is the single merged item out of Merge_Profile_Docs, carrying all 5\n// named fields written by the Rename - * nodes. Falls back gracefully if a Drive\n// file ID hasn't been wired yet so the workflow still runs during setup.\nconst alexProfile = $json.alex_profile || '(profile not loaded)';\nconst preferences = $json.preferences || '(preferences not loaded)';\nconst patterns = $json.patterns || '(patterns not loaded)';\nconst memoryLog = $json.memory_log || '(memory log not loaded)';\nconst solLearnings = $json.sol_learnings || '(learnings not loaded)';\n\nconst system_message = `\nDATE & TIME: ${now.toISOString()}\nCLIENT: ${config.client_name || config.client_id}\n\nUSER CORE PROFILE:\n${alexProfile}\n\nUSER PREFERENCES:\n${preferences}\n\nOBSERVED PATTERNS:\n${patterns}\n\nMEMORY LOG (RECENT FACTS):\n${memoryLog}\n\nSOL INTERNAL JOURNAL:\n${solLearnings}\n\nPROTOCOL:\n- You are Sol, a bilingual (English/Spanish) AI executive assistant for ${config.client_name || 'this business'}.\n- Use the knowledge_base tool before answering questions about internal docs, pricing, or process.\n- Use the calendar tool for anything scheduling-related. Never guess availability.\n- Use update_profile to save durable new facts about the user (not small talk).\n- Match the user's language (English/Spanish/Spanglish), defaulting to ${config.preferred_language || 'en'}.\n- Keep phone/voice replies short, natural, and professional. No markdown in voice replies.\n- Never fabricate calendar events, contacts, or emails. If a tool fails, say so plainly.\n- This conversation belongs to exactly one client tenant. Never reference, compare, or leak details from any other client.\n\nSource: ${trigger.source || 'unknown'}\nModeration flagged: ${trigger.meta && trigger.meta.moderation_flagged}\nRate limited: ${trigger.meta && trigger.meta.rate_limited}\n`.trim();\n\nreturn [{ json: { system_message, prompt: trigger.prompt, user_id: trigger.user_id, source: trigger.source, client_id: config.client_id, pinecone_namespace: config.pinecone_namespace } }];"
       }
     },
     {
@@ -206,10 +220,12 @@
       "position": [-560, 200],
       "parameters": {
         "mode": "retrieve-as-tool",
-        "pineconeIndex": { "value": "ytuma-memory-v3" },
-        "toolDescription": "Search the YTUMA internal knowledge base for docs, pricing, and process info.",
+        "pineconeIndex": { "value": "ytuma-knowledge-base" },
+        "options": { "pineconeNamespace": "={{ $('Build - System Message').item.json.pinecone_namespace }}" },
+        "toolDescription": "Search this client's own knowledge base for docs, pricing, and process info.",
         "topK": 5
       },
+      "notes": "Namespace scopes retrieval to this client only - one shared Pinecone index, hard-isolated by namespace per tenant.",
       "credentials": { "pineconeApi": { "id": "PINECONE_API", "name": "Pinecone account" } }
     },
     {
@@ -221,8 +237,18 @@
       "parameters": {
         "name": "calendar_tool",
         "description": "Call this to schedule meetings, add events, or check availability. Provide JSON with action ('add_event'|'check_availability'), summary, start_time, end_time.",
-        "workflowId": { "value": "03_YTUMA_Tool_Calendar", "cachedResultName": "03_YTUMA_Tool_Calendar" }
-      }
+        "workflowId": { "value": "03_YTUMA_Tool_Calendar", "cachedResultName": "03_YTUMA_Tool_Calendar" },
+        "workflowInputs": {
+          "value": {
+            "action": "={{ $fromAI('action', 'add_event or check_availability', 'string') }}",
+            "summary": "={{ $fromAI('summary', 'Event title, required for add_event', 'string') }}",
+            "start_time": "={{ $fromAI('start_time', 'ISO 8601 start time', 'string') }}",
+            "end_time": "={{ $fromAI('end_time', 'ISO 8601 end time', 'string') }}",
+            "client_id": "={{ $('Build - System Message').item.json.client_id }}"
+          }
+        }
+      },
+      "notes": "client_id is injected from the actual request context, never left for the model to fill in - a client's assistant can only ever touch its own calendar."
     },
     {
       "id": "b13",
@@ -232,9 +258,17 @@
       "position": [-280, 320],
       "parameters": {
         "name": "update_profile",
-        "description": "Call this to save new durable facts about the user to their long-term journal. Provide note_to_add and user_id.",
-        "workflowId": { "value": "06_YTUMA_Tool_Journal", "cachedResultName": "06_YTUMA_Tool_Journal" }
-      }
+        "description": "Call this to save new durable facts about the user to their long-term journal. Provide note_to_add.",
+        "workflowId": { "value": "06_YTUMA_Tool_Journal", "cachedResultName": "06_YTUMA_Tool_Journal" },
+        "workflowInputs": {
+          "value": {
+            "note_to_add": "={{ $fromAI('note_to_add', 'The durable fact to remember', 'string') }}",
+            "user_id": "={{ $('Build - System Message').item.json.user_id }}",
+            "client_id": "={{ $('Build - System Message').item.json.client_id }}"
+          }
+        }
+      },
+      "notes": "client_id and user_id come from the request context, not the model - the journal can never be pointed at the wrong client's Doc/Pinecone namespace."
     },
     {
       "id": "b14",
@@ -244,7 +278,7 @@
       "position": [-140, 260],
       "parameters": {
         "sessionIdType": "customKey",
-        "sessionKey": "={{ $json.user_id || 'anonymous' }}",
+        "sessionKey": "={{ ($('Build - System Message').item.json.client_id || 'unknown_client') + ':' + ($json.user_id || 'anonymous') }}",
         "contextWindowLength": 8
       }
     },
@@ -271,14 +305,15 @@
           "assignments": [
             { "name": "success", "type": "boolean", "value": true },
             { "name": "output", "value": "={{ $json.output }}" },
-            { "name": "meta", "value": "={{ { user_id: $('Build - System Message').item.json.user_id, source: $('Build - System Message').item.json.source, model: 'gpt-4o', from_workflow: '02_YTUMA_Brain', timestamp: $now.toISO() } }}" }
+            { "name": "meta", "value": "={{ { user_id: $('Build - System Message').item.json.user_id, source: $('Build - System Message').item.json.source, client_id: $('Build - System Message').item.json.client_id, model: 'gpt-4o', from_workflow: '02_YTUMA_Brain', timestamp: $now.toISO() } }}" }
           ]
         }
       }
     }
   ],
   "connections": {
-    "02_Brain_Start": {
+    "02_Brain_Start": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": {
       "main": [[
         { "node": "Read - alex_profile", "type": "main", "index": 0 },
         { "node": "Read - preferences", "type": "main", "index": 0 },

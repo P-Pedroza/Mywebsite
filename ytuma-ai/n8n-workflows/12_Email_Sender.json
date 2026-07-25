@@ -1,0 +1,243 @@
+{
+  "name": "12_YTUMA_Email_Sender",
+  "nodes": [
+    {
+      "id": "s1",
+      "name": "Start - Send Request",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1600, 0],
+      "parameters": {
+        "workflowInputs": { "values": [
+          { "name": "to" }, { "name": "subject" }, { "name": "body" },
+          { "name": "attachments" }, { "name": "send_at" }, { "name": "retry_policy" }, { "name": "trace_id" },
+          { "name": "client_id" }
+        ] }
+      }
+    },
+    {
+      "id": "s2",
+      "name": "Schema Guard - Email Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1380, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const { to, subject, body, client_id } = $json;\nif (!to || !subject || !body) {\n  throw new Error('Missing required field(s): to, subject, body are all required.');\n}\nif (!client_id || !client_id.toString().trim()) {\n  throw new Error('Missing client_id - every send must say which client tenant it belongs to.');\n}\nreturn [{ json: { ...$json, trace_id: $json.trace_id || ('trace_' + Date.now()), attempt: $json.attempt || 0 } }];"
+      }
+    },
+    {
+      "id": "s1b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1270, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "s1c",
+      "name": "Merge - Payload + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1220, 0],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "to", "value": "={{ $('Schema Guard - Email Payload').item.json.to }}" },
+          { "name": "subject", "value": "={{ $('Schema Guard - Email Payload').item.json.subject }}" },
+          { "name": "body", "value": "={{ $('Schema Guard - Email Payload').item.json.body }}" },
+          { "name": "attachments", "value": "={{ $('Schema Guard - Email Payload').item.json.attachments }}" },
+          { "name": "send_at", "value": "={{ $('Schema Guard - Email Payload').item.json.send_at }}" },
+          { "name": "retry_policy", "value": "={{ $('Schema Guard - Email Payload').item.json.retry_policy }}" },
+          { "name": "trace_id", "value": "={{ $('Schema Guard - Email Payload').item.json.trace_id }}" },
+          { "name": "attempt", "value": "={{ $('Schema Guard - Email Payload').item.json.attempt }}" },
+          { "name": "client_id", "value": "={{ $json.client_id }}" },
+          { "name": "reply_to", "value": "={{ $json.admin_email }}" }
+        ] }
+      },
+      "notes": "Default (shared credential) model: your Gmail account sends the message, Reply-To is set to the client's own address so responses land with them. Pro tier: point email_sender_workflow_id at a per-client copy of this workflow with the client's own Gmail credential instead."
+    },
+    {
+      "id": "s3",
+      "name": "Delay Router",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1160, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.send_at }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] }
+      }
+    },
+    {
+      "id": "s4",
+      "name": "WAIT",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [-940, -80],
+      "parameters": { "resume": "specificTime", "dateTime": "={{ $json.send_at }}" }
+    },
+    {
+      "id": "s5",
+      "name": "Build Binary Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-700, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const attachments = $json.attachments || [];\nconst binary = {};\nattachments.forEach((att, i) => {\n  binary['attachment_' + i] = {\n    data: att.base64,\n    fileName: att.filename || ('attachment_' + i),\n    mimeType: att.mimeType || 'application/octet-stream'\n  };\n});\nreturn [{ json: $json, binary }];"
+      }
+    },
+    {
+      "id": "s6",
+      "name": "Send - Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-480, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {
+          "replyTo": "={{ $json.reply_to }}",
+          "attachmentsUi": { "attachmentsBinary": [{ "property": "={{ Object.keys($binary || {}).join(',') }}" }] }
+        }
+      },
+      "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "id": "s7",
+      "name": "IF - Gmail Failed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-260, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.error }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] }
+      }
+    },
+    {
+      "id": "s8",
+      "name": "Return_Success",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-40, -80],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "success", "type": "boolean", "value": true },
+          { "name": "status", "value": "sent" },
+          { "name": "trace_id", "value": "={{ $('Schema Guard - Email Payload').item.json.trace_id }}" }
+        ] }
+      }
+    },
+    {
+      "id": "s9",
+      "name": "Build Retry Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-40, 80],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "workflow_name", "value": "12_YTUMA_Email_Sender" },
+          { "name": "node_name", "value": "Send - Gmail" },
+          { "name": "severity", "value": "medium" },
+          { "name": "message", "value": "={{ $json.error || 'Gmail send failed' }}" },
+          { "name": "error_type", "value": "EMAIL_SEND_FAILURE" },
+          { "name": "client_id", "value": "={{ $('Merge - Payload + Config').item.json.client_id }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id || $('Merge - Payload + Config').item.json.trace_id }}" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
+          { "name": "retry_policy", "value": "={{ $('Merge - Payload + Config').item.json.retry_policy }}" }
+        ] }
+      }
+    },
+    {
+      "id": "s10",
+      "name": "Call 98_YTUMA_Retry_Engine",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [180, 80],
+      "parameters": {
+        "workflowId": { "value": "98_YTUMA_Retry_Engine", "cachedResultName": "98_YTUMA_Retry_Engine" },
+        "workflowInputs": { "value": "={{ $json }}" },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "s11",
+      "name": "IF - Retry Now",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [400, 80],
+      "parameters": { "conditions": { "conditions": [{ "leftValue": "={{ $json.retry_now }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } }
+    },
+    {
+      "id": "s12",
+      "name": "Restore Email Payload",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [620, 20],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "to", "value": "={{ $('Merge - Payload + Config').item.json.to }}" },
+          { "name": "subject", "value": "={{ $('Merge - Payload + Config').item.json.subject }}" },
+          { "name": "body", "value": "={{ $('Merge - Payload + Config').item.json.body }}" },
+          { "name": "attachments", "value": "={{ $('Merge - Payload + Config').item.json.attachments }}" },
+          { "name": "reply_to", "value": "={{ $('Merge - Payload + Config').item.json.reply_to }}" },
+          { "name": "client_id", "value": "={{ $('Merge - Payload + Config').item.json.client_id }}" },
+          { "name": "attempt", "value": "={{ $json.attempt }}" },
+          { "name": "retry_policy", "value": "={{ $('Merge - Payload + Config').item.json.retry_policy }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id }}" }
+        ] }
+      }
+    },
+    {
+      "id": "s13",
+      "name": "Return_Failed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [620, 160],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "success", "type": "boolean", "value": false },
+          { "name": "status", "value": "={{ $json.action }}" },
+          { "name": "trace_id", "value": "={{ $json.trace_id }}" }
+        ] }
+      }
+    }
+  ],
+  "connections": {
+    "Start - Send Request": { "main": [[{ "node": "Schema Guard - Email Payload", "type": "main", "index": 0 }]] },
+    "Schema Guard - Email Payload": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Merge - Payload + Config", "type": "main", "index": 0 }]] },
+    "Merge - Payload + Config": { "main": [[{ "node": "Delay Router", "type": "main", "index": 0 }]] },
+    "Delay Router": {
+      "main": [
+        [{ "node": "WAIT", "type": "main", "index": 0 }],
+        [{ "node": "Build Binary Attachments", "type": "main", "index": 0 }]
+      ]
+    },
+    "WAIT": { "main": [[{ "node": "Build Binary Attachments", "type": "main", "index": 0 }]] },
+    "Build Binary Attachments": { "main": [[{ "node": "Send - Gmail", "type": "main", "index": 0 }]] },
+    "Send - Gmail": { "main": [[{ "node": "IF - Gmail Failed", "type": "main", "index": 0 }], [{ "node": "IF - Gmail Failed", "type": "main", "index": 0 }]] },
+    "IF - Gmail Failed": {
+      "main": [
+        [{ "node": "Build Retry Payload", "type": "main", "index": 0 }],
+        [{ "node": "Return_Success", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Retry Payload": { "main": [[{ "node": "Call 98_YTUMA_Retry_Engine", "type": "main", "index": 0 }]] },
+    "Call 98_YTUMA_Retry_Engine": { "main": [[{ "node": "IF - Retry Now", "type": "main", "index": 0 }]] },
+    "IF - Retry Now": {
+      "main": [
+        [{ "node": "Restore Email Payload", "type": "main", "index": 0 }],
+        [{ "node": "Return_Failed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Restore Email Payload": { "main": [[{ "node": "Send - Gmail", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

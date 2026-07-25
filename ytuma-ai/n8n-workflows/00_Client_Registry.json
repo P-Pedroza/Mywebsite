@@ -1,0 +1,154 @@
+{
+  "name": "00_YTUMA_Client_Registry",
+  "nodes": [
+    {
+      "id": "r1",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1400, 0],
+      "parameters": {
+        "workflowInputs": { "values": [{ "name": "client_id" }, { "name": "twilio_number" }, { "name": "knowledge_base_folder_id" }] }
+      },
+      "notes": "Called by every other workflow to resolve which Sheet/Doc/Calendar/Pinecone-namespace belongs to a given client_id. Add one row per client to the Clients tab below - that's the entire onboarding step for a new client, no new workflows to build. Pass exactly ONE of client_id / twilio_number / knowledge_base_folder_id depending on what the caller already knows."
+    },
+    {
+      "id": "r2",
+      "name": "Route Lookup Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-1180, 0],
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputKey": "by_client_id", "conditions": { "conditions": [{ "leftValue": "={{ $json.client_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] } },
+            { "outputKey": "by_twilio_number", "conditions": { "conditions": [{ "leftValue": "={{ $json.twilio_number }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] } },
+            { "outputKey": "by_folder_id", "conditions": { "conditions": [{ "leftValue": "={{ $json.knowledge_base_folder_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] } }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "by_client_id: caller already knows client_id (Gateway, internal calls). by_twilio_number: caller only has the Twilio number that was dialed (09b inbound). by_folder_id: caller has a Drive folder ID and needs to know which client owns it (05 ingestion)."
+    },
+    {
+      "id": "r3",
+      "name": "Lookup By client_id",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-960, -80],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_CLIENT_REGISTRY_SHEET_ID" },
+        "sheetName": { "value": "Clients" },
+        "filtersUI": { "values": [{ "lookupColumn": "client_id", "lookupValue": "={{ $json.client_id }}" }] },
+        "options": { "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "r4",
+      "name": "Lookup By twilio_number",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-960, 100],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_CLIENT_REGISTRY_SHEET_ID" },
+        "sheetName": { "value": "Clients" },
+        "filtersUI": { "values": [{ "lookupColumn": "twilio_number", "lookupValue": "={{ $json.twilio_number }}" }] },
+        "options": { "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "r4b",
+      "name": "Lookup By knowledge_base_folder_id",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-960, 240],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_CLIENT_REGISTRY_SHEET_ID" },
+        "sheetName": { "value": "Clients" },
+        "filtersUI": { "values": [{ "lookupColumn": "knowledge_base_folder_id", "lookupValue": "={{ $json.knowledge_base_folder_id }}" }] },
+        "options": { "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "r5",
+      "name": "IF Client Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-740, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.client_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] }
+      }
+    },
+    {
+      "id": "r6",
+      "name": "Format Client Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-520, -80],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "found", "type": "boolean", "value": true },
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
+            { "name": "client_name", "value": "={{ $json.client_name }}" },
+            { "name": "status", "value": "={{ $json.status }}" },
+            { "name": "calendar_id", "value": "={{ $json.calendar_id }}" },
+            { "name": "crm_sheet_id", "value": "={{ $json.crm_sheet_id }}" },
+            { "name": "journal_doc_id", "value": "={{ $json.journal_doc_id }}" },
+            { "name": "memory_rejections_doc_id", "value": "={{ $json.memory_rejections_doc_id }}" },
+            { "name": "knowledge_base_folder_id", "value": "={{ $json.knowledge_base_folder_id }}" },
+            { "name": "pinecone_namespace", "value": "={{ $json.pinecone_namespace || $json.client_id }}" },
+            { "name": "alex_profile_file_id", "value": "={{ $json.alex_profile_file_id }}" },
+            { "name": "preferences_file_id", "value": "={{ $json.preferences_file_id }}" },
+            { "name": "patterns_file_id", "value": "={{ $json.patterns_file_id }}" },
+            { "name": "memory_log_file_id", "value": "={{ $json.memory_log_file_id }}" },
+            { "name": "sol_learnings_file_id", "value": "={{ $json.sol_learnings_file_id }}" },
+            { "name": "admin_email", "value": "={{ $json.admin_email }}" },
+            { "name": "admin_telegram_chat_id", "value": "={{ $json.admin_telegram_chat_id }}" },
+            { "name": "twilio_number", "value": "={{ $json.twilio_number }}" },
+            { "name": "email_sender_workflow_id", "value": "={{ $json.email_sender_workflow_id || '12_YTUMA_Email_Sender' }}" },
+            { "name": "preferred_language", "value": "={{ $json.preferred_language || 'en' }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "r7",
+      "name": "Client Not Found",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-520, 100],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "throw new Error('YTUMA Client Registry: no active client found for ' + (JSON.stringify({ client_id: $json.client_id, twilio_number: $json.twilio_number, knowledge_base_folder_id: $json.knowledge_base_folder_id })) + '. Add a row to the Clients tab of the Client Registry sheet, or check the caller is passing the lookup key correctly.');"
+      }
+    }
+  ],
+  "connections": {
+    "Resolve Client Config": { "main": [[{ "node": "Route Lookup Type", "type": "main", "index": 0 }]] },
+    "Route Lookup Type": {
+      "main": [
+        [{ "node": "Lookup By client_id", "type": "main", "index": 0 }],
+        [{ "node": "Lookup By twilio_number", "type": "main", "index": 0 }],
+        [{ "node": "Lookup By knowledge_base_folder_id", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lookup By client_id": { "main": [[{ "node": "IF Client Found", "type": "main", "index": 0 }]] },
+    "Lookup By twilio_number": { "main": [[{ "node": "IF Client Found", "type": "main", "index": 0 }]] },
+    "Lookup By knowledge_base_folder_id": { "main": [[{ "node": "IF Client Found", "type": "main", "index": 0 }]] },
+    "IF Client Found": {
+      "main": [
+        [{ "node": "Format Client Config", "type": "main", "index": 0 }],
+        [{ "node": "Client Not Found", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

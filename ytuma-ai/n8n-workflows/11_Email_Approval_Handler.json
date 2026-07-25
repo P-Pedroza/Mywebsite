@@ -1,0 +1,327 @@
+{
+  "name": "11_YTUMA_Email_Approval_Handler",
+  "nodes": [
+    {
+      "id": "a1",
+      "name": "Telegram_Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-1600, 0],
+      "parameters": { "updates": ["message"] },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "a2",
+      "name": "Parse the command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-1380, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const text = ($json.message.text || '').trim();\nconst chat_id = $json.message.chat.id;\nconst username = $json.message.from.username || $json.message.from.first_name || 'unknown';\n\nlet command = null, approval_id = null, new_body = null, is_valid = false;\n\nlet m = text.match(/^approve\\s+([A-Za-z0-9-]+)$/i);\nif (m) { command = 'approve'; approval_id = m[1].toUpperCase(); is_valid = true; }\n\nif (!is_valid) {\n  m = text.match(/^edit\\s+([A-Za-z0-9-]+)\\s*:\\s*([\\s\\S]+)$/i);\n  if (m) { command = 'edit'; approval_id = m[1].toUpperCase(); new_body = m[2].trim(); is_valid = true; }\n}\n\nif (!is_valid) {\n  m = text.match(/^cancel\\s+([A-Za-z0-9-]+)$/i);\n  if (m) { command = 'cancel'; approval_id = m[1].toUpperCase(); is_valid = true; }\n}\n\nreturn [{ json: { command, approval_id, new_body, chat_id, username, is_valid, lookup_key: approval_id } }];"
+      }
+    },
+    {
+      "id": "a3",
+      "name": "IF Valid Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1160, 0],
+      "parameters": { "conditions": { "conditions": [{ "leftValue": "={{ $json.is_valid }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } }
+    },
+    {
+      "id": "a4",
+      "name": "Sheets_Get_By_ApprovalID",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-940, -60],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "filtersUI": { "values": [{ "lookupColumn": "approval_id", "lookupValue": "={{ $json.lookup_key }}" }] },
+        "options": { "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "a5",
+      "name": "IF Found by ApprovalID",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-720, -60],
+      "parameters": { "conditions": { "conditions": [{ "leftValue": "={{ $json.approval_id }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] } }
+    },
+    {
+      "id": "a6",
+      "name": "Sheets_Get_By_ApprovalCode",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-500, 40],
+      "parameters": {
+        "operation": "lookup",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "filtersUI": { "values": [{ "lookupColumn": "approval_code", "lookupValue": "={{ $('Parse the command').item.json.lookup_key }}" }] },
+        "options": { "alwaysOutputData": true }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "a7",
+      "name": "IF Row Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-280, 40],
+      "parameters": { "conditions": { "conditions": [{ "leftValue": "={{ $json.approval_code }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }] } }
+    },
+    {
+      "id": "a8",
+      "name": "Telegram Draft not found",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-60, 140],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse the command').item.json.chat_id }}",
+        "text": "=Couldn't find draft {{ $('Parse the command').item.json.approval_id }}. It may never have existed, already be resolved, or the ID may be mistyped."
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "a9",
+      "name": "IF STATUS ALLOWED",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-60, -60],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ ($json.status || '').toLowerCase().replace('_','') }}", "rightValue": "^(pendingapproval|editpending)$", "operator": { "type": "string", "operation": "regex" } }] }
+      }
+    },
+    {
+      "id": "a10",
+      "name": "Telegram Already Resolved",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [160, 40],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Parse the command').item.json.chat_id }}",
+        "text": "=Draft {{ $('Parse the command').item.json.approval_id }} is already '{{ $json.status }}' and can't be changed again."
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "a11",
+      "name": "Edit Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [160, -140],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "command", "value": "={{ $('Parse the command').item.json.command }}" },
+            { "name": "approval_id", "value": "={{ $json.approval_id || $json.approval_code }}" },
+            { "name": "username", "value": "={{ $('Parse the command').item.json.username }}" },
+            { "name": "new_body", "value": "={{ $('Parse the command').item.json.new_body }}" },
+            { "name": "chat_id", "value": "={{ $('Parse the command').item.json.chat_id }}" },
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
+            { "name": "to_email", "value": "={{ $json.to_email }}" },
+            { "name": "subject", "value": "={{ $json.subject }}" },
+            { "name": "body", "value": "={{ $json.body }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "a12",
+      "name": "SW_Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [380, -140],
+      "parameters": {
+        "rules": { "values": [
+          { "outputKey": "approve", "conditions": { "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "approve", "operator": { "type": "string", "operation": "equals" } }] } },
+          { "outputKey": "edit", "conditions": { "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "edit", "operator": { "type": "string", "operation": "equals" } }] } },
+          { "outputKey": "cancel", "conditions": { "conditions": [{ "leftValue": "={{ $json.command }}", "rightValue": "cancel", "operator": { "type": "string", "operation": "equals" } }] } }
+        ] }
+      }
+    },
+    {
+      "id": "a13",
+      "name": "Sheets_Update_Approved",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [620, -280],
+      "parameters": {
+        "operation": "update",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "columns": { "matchingColumns": ["approval_id"], "value": {
+          "approval_id": "={{ $json.approval_id }}",
+          "status": "approved",
+          "last_action": "approved",
+          "approved_by": "={{ $json.username }}",
+          "approved_at": "={{ $now.toISO() }}"
+        } }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "a13b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [800, -280],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $('Edit Fields').item.json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "email_sender_workflow_id lets a client be routed to a dedicated per-client sender workflow (its own Gmail credential) at the Pro tier; defaults to the shared 12_YTUMA_Email_Sender otherwise."
+    },
+    {
+      "id": "a13c",
+      "name": "Send Approved Email",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [1020, -280],
+      "parameters": {
+        "workflowId": { "value": "={{ $json.email_sender_workflow_id }}" },
+        "workflowInputs": { "value": {
+          "to": "={{ $('Edit Fields').item.json.to_email }}",
+          "subject": "={{ $('Edit Fields').item.json.subject }}",
+          "body": "={{ $('Edit Fields').item.json.body }}",
+          "client_id": "={{ $('Edit Fields').item.json.client_id }}",
+          "trace_id": "={{ $('Edit Fields').item.json.approval_id }}"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "a14",
+      "name": "Telegram_Approved_Confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1240, -280],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Edit Fields').item.json.chat_id }}",
+        "text": "={{ $json.success ? '✅ Draft ' + $('Edit Fields').item.json.approval_id + ' approved and sent.' : '⚠️ Draft ' + $('Edit Fields').item.json.approval_id + ' approved, but sending failed/is retrying - check 99_YTUMA_Error_Handler.' }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "a15",
+      "name": "Update row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [620, -140],
+      "parameters": {
+        "operation": "update",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "columns": { "matchingColumns": ["approval_id"], "value": {
+          "approval_id": "={{ $json.approval_id }}",
+          "status": "edit_pending",
+          "last_action": "edited",
+          "body": "={{ $json.new_body }}",
+          "updated_at": "={{ $now.toISO() }}"
+        } }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "a16",
+      "name": "Telegram_Edited_Confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [840, -140],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Edit Fields').item.json.chat_id }}",
+        "text": "=✏️ Draft {{ $('Edit Fields').item.json.approval_id }} updated. Reply approve/edit/cancel {{ $('Edit Fields').item.json.approval_id }} again when ready."
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "a17",
+      "name": "Sheets_Update_Cancelled",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [620, 0],
+      "parameters": {
+        "operation": "update",
+        "documentId": { "value": "YTUMA_EMAIL_APPROVALS_SHEET_ID" },
+        "sheetName": { "value": "Sheet1" },
+        "columns": { "matchingColumns": ["approval_id"], "value": {
+          "approval_id": "={{ $json.approval_id }}",
+          "status": "cancelled",
+          "last_action": "cancelled",
+          "cancelled_by": "={{ $json.username }}",
+          "cancelled_at": "={{ $now.toISO() }}",
+          "updated_at": "={{ $now.toISO() }}"
+        } }
+      },
+      "credentials": { "googleSheetsOAuth2Api": { "id": "GOOGLE_SHEETS_OAUTH", "name": "Google Sheets account" } }
+    },
+    {
+      "id": "a18",
+      "name": "Telegram_Cancelled_Confirm",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [840, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Edit Fields').item.json.chat_id }}",
+        "text": "=🗑️ Draft {{ $('Edit Fields').item.json.approval_id }} cancelled."
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Telegram_Trigger": { "main": [[{ "node": "Parse the command", "type": "main", "index": 0 }]] },
+    "Parse the command": { "main": [[{ "node": "IF Valid Command", "type": "main", "index": 0 }]] },
+    "IF Valid Command": { "main": [[{ "node": "Sheets_Get_By_ApprovalID", "type": "main", "index": 0 }], []] },
+    "Sheets_Get_By_ApprovalID": { "main": [[{ "node": "IF Found by ApprovalID", "type": "main", "index": 0 }]] },
+    "IF Found by ApprovalID": {
+      "main": [
+        [{ "node": "IF STATUS ALLOWED", "type": "main", "index": 0 }],
+        [{ "node": "Sheets_Get_By_ApprovalCode", "type": "main", "index": 0 }]
+      ]
+    },
+    "Sheets_Get_By_ApprovalCode": { "main": [[{ "node": "IF Row Found", "type": "main", "index": 0 }]] },
+    "IF Row Found": {
+      "main": [
+        [{ "node": "IF STATUS ALLOWED", "type": "main", "index": 0 }],
+        [{ "node": "Telegram Draft not found", "type": "main", "index": 0 }]
+      ]
+    },
+    "IF STATUS ALLOWED": {
+      "main": [
+        [{ "node": "Edit Fields", "type": "main", "index": 0 }],
+        [{ "node": "Telegram Already Resolved", "type": "main", "index": 0 }]
+      ]
+    },
+    "Edit Fields": { "main": [[{ "node": "SW_Command", "type": "main", "index": 0 }]] },
+    "SW_Command": {
+      "main": [
+        [{ "node": "Sheets_Update_Approved", "type": "main", "index": 0 }],
+        [{ "node": "Update row in sheet", "type": "main", "index": 0 }],
+        [{ "node": "Sheets_Update_Cancelled", "type": "main", "index": 0 }]
+      ]
+    },
+    "Sheets_Update_Approved": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Send Approved Email", "type": "main", "index": 0 }]] },
+    "Send Approved Email": { "main": [[{ "node": "Telegram_Approved_Confirm", "type": "main", "index": 0 }]] },
+    "Update row in sheet": { "main": [[{ "node": "Telegram_Edited_Confirm", "type": "main", "index": 0 }]] },
+    "Sheets_Update_Cancelled": { "main": [[{ "node": "Telegram_Cancelled_Confirm", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

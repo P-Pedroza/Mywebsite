@@ -1,0 +1,322 @@
+{
+  "name": "09b_YTUMA_Phone_Inbound_Receptionist",
+  "nodes": [
+    {
+      "id": "i1",
+      "name": "Start - Phone Inbound",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1700, 0],
+      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-inbound", "responseMode": "responseNode", "options": {} }
+    },
+    {
+      "id": "i1b",
+      "name": "Normalize Inbound Call",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1480, 0],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "twilio_number", "value": "={{ ($json.body ? $json.body.To : $json.To) || '' }}" },
+          { "name": "caller", "value": "={{ ($json.body ? $json.body.From : $json.From) || '' }}" }
+        ] }
+      },
+      "notes": "Twilio's 'To' is the number the caller dialed, i.e. which client this call belongs to - resolved next via the registry's reverse lookup."
+    },
+    {
+      "id": "i1c",
+      "name": "Resolve Client Config (Greeting)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1260, 0],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "continueErrorOutput so a wrong/decommissioned number gets a graceful hangup instead of Twilio receiving a raw 500 and the caller hearing dead air."
+    },
+    {
+      "id": "i1c2",
+      "name": "IF Client Resolved (Greeting)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1150, 0],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.error }}", "rightValue": "", "operator": { "type": "string", "operation": "equals" } }] }
+      }
+    },
+    {
+      "id": "i1f",
+      "name": "Log Unrecognized Number (Greeting)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1040, 100],
+      "parameters": {
+        "workflowId": { "value": "99_YTUMA_Error_Handler", "cachedResultName": "99_YTUMA_Error_Handler" },
+        "workflowInputs": { "value": {
+          "workflow_name": "09b_YTUMA_Phone_Inbound_Receptionist",
+          "node_name": "Resolve Client Config (Greeting)",
+          "severity": "medium",
+          "message": "=Inbound call to a Twilio number with no matching client row: {{ $json.twilio_number }}",
+          "error_type": "UNRECOGNIZED_PHONE_NUMBER",
+          "trace_id": "={{ 'phone_' + $now.toISO() }}",
+          "client_id": "unknown_number"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "A wrong number is itself worth knowing about - it usually means a number was disconnected, ported, or misconfigured in Twilio."
+    },
+    {
+      "id": "i1g",
+      "name": "Build Fallback Greeting",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-820, 100],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "greeting_xml", "value": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">Sorry, this number isn't currently set up. Please check the number and try again.</Say><Hangup/></Response>" }
+        ] }
+      }
+    },
+    {
+      "id": "i1d",
+      "name": "Build Greeting TwiML",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1040, 0],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "greeting_xml", "value": "=<Response><Gather input=\"speech\" action=\"https://YOUR_N8N_HOST/webhook/ytuma/phone-gather\" method=\"POST\" language=\"en-US\" speechTimeout=\"auto\"><Say voice=\"Polly.Joanna\" language=\"en-US\">Hi, this is Sol with {{ $json.client_name || 'the office' }}. Briefly, how can I help you today?</Say></Gather><Say voice=\"Polly.Joanna\" language=\"en-US\">Sorry, I did not catch anything. We will follow up with you later. Goodbye.</Say></Response>" }
+        ] }
+      }
+    },
+    {
+      "id": "i1e",
+      "name": "Respond - Greeting",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-820, 0],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.greeting_xml }}",
+        "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
+      }
+    },
+    {
+      "id": "i2",
+      "name": "Handle - Phone Gather",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-1700, 260],
+      "parameters": { "httpMethod": "POST", "path": "ytuma/phone-gather", "responseMode": "responseNode", "options": {} }
+    },
+    {
+      "id": "i3",
+      "name": "Normalize Gather Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1480, 260],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "message", "value": "={{ $json.body ? $json.body.SpeechResult : $json.SpeechResult || '' }}" },
+            { "name": "caller", "value": "={{ $json.body ? $json.body.From : $json.From || '' }}" },
+            { "name": "twilio_number", "value": "={{ $json.body ? $json.body.To : $json.To || '' }}" },
+            { "name": "confidence", "value": "={{ $json.body ? $json.body.Confidence : $json.Confidence || '' }}" },
+            { "name": "raw_payload", "value": "={{ JSON.stringify($json) }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "i3b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1260, 260],
+      "onError": "continueErrorOutput",
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "twilio_number": "={{ $json.twilio_number }}" } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "continueErrorOutput for the same reason as the greeting step - shouldn't normally trigger here since the greeting step already resolved the same number moments earlier, but a registry row deleted mid-call is still possible."
+    },
+    {
+      "id": "i3d2",
+      "name": "IF Client Resolved (Gather)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1150, 260],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.error }}", "rightValue": "", "operator": { "type": "string", "operation": "equals" } }] }
+      }
+    },
+    {
+      "id": "i3f",
+      "name": "Log Unrecognized Number (Gather)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1040, 360],
+      "parameters": {
+        "workflowId": { "value": "99_YTUMA_Error_Handler", "cachedResultName": "99_YTUMA_Error_Handler" },
+        "workflowInputs": { "value": {
+          "workflow_name": "09b_YTUMA_Phone_Inbound_Receptionist",
+          "node_name": "Resolve Client Config",
+          "severity": "medium",
+          "message": "=Gather step: no matching client for Twilio number {{ $('Normalize Gather Event').item.json.twilio_number }}",
+          "error_type": "UNRECOGNIZED_PHONE_NUMBER",
+          "trace_id": "={{ 'phone_' + $now.toISO() }}",
+          "client_id": "unknown_number"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "i3g",
+      "name": "Build Fallback Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-820, 360],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "reply_text", "value": "Sorry, I'm having trouble connecting you right now. Please try again shortly." }
+        ] }
+      }
+    },
+    {
+      "id": "i3c",
+      "name": "Merge - Gather + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1040, 260],
+      "parameters": {
+        "assignments": { "assignments": [
+          { "name": "message", "value": "={{ $('Normalize Gather Event').item.json.message }}" },
+          { "name": "caller", "value": "={{ $('Normalize Gather Event').item.json.caller }}" },
+          { "name": "confidence", "value": "={{ $('Normalize Gather Event').item.json.confidence }}" },
+          { "name": "client_id", "value": "={{ $json.client_id }}" }
+        ] }
+      }
+    },
+    {
+      "id": "i4",
+      "name": "Call → Sol Brain",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-820, 260],
+      "parameters": {
+        "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
+        "workflowInputs": { "value": {
+          "prompt": "=You are Sol, my AI phone receptionist. The caller said: \"{{ $json.message }}\". Caller phone: {{ $json.caller }}. Understand what they want and generate a short, natural spoken reply in their language. Only output reply text, no XML/markdown.",
+          "user_id": "=phone_{{ $json.caller }}",
+          "source": "phone",
+          "client_id": "={{ $json.client_id }}"
+        } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "i5",
+      "name": "Build - Phone Reply",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-600, 260],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "reply_text", "value": "={{ $json.output || 'Thank you for calling. We have received your request and will follow up with you shortly.' }}" },
+            { "name": "caller", "value": "={{ $('Merge - Gather + Config').item.json.caller }}" },
+            { "name": "message", "value": "={{ $('Merge - Gather + Config').item.json.message }}" },
+            { "name": "client_id", "value": "={{ $('Merge - Gather + Config').item.json.client_id }}" },
+            { "name": "timestamp", "value": "={{ $now.toISO() }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "i6",
+      "name": "Build - CRM Event",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-380, 260],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
+            { "name": "timestamp", "value": "={{ $json.timestamp }}" },
+            { "name": "contact_phone", "value": "={{ $json.caller }}" },
+            { "name": "contact_name", "value": "" },
+            { "name": "contact_email", "value": "" },
+            { "name": "channel", "value": "phone" },
+            { "name": "contact_type", "value": "client" },
+            { "name": "direction", "value": "inbound" },
+            { "name": "summary", "value": "={{ 'Inbound phone call - ' + ($json.message || '').slice(0, 120) }}" },
+            { "name": "full_message", "value": "={{ $json.message }}" },
+            { "name": "next_action", "value": "" },
+            { "name": "stage", "value": "Lead" },
+            { "name": "tags", "value": "phone,inbound,ai" },
+            { "name": "handled_by", "value": "sol" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "i7",
+      "name": "Log to CRM",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-160, 260],
+      "parameters": {
+        "workflowId": { "value": "07_YTUMA_CRM_Sheets", "cachedResultName": "07_YTUMA_CRM_Sheets" },
+        "workflowInputs": { "value": "={{ $json }}" }
+      }
+    },
+    {
+      "id": "i8",
+      "name": "Respond-Twilio",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [60, 260],
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=<Response><Say voice=\"Polly.Joanna\" language=\"en-US\">{{ $json.reply_text || $('Build - Phone Reply').item.json.reply_text }}</Say></Response>",
+        "options": { "responseHeaders": { "entries": [{ "name": "Content-Type", "value": "text/xml" }] } }
+      }
+    }
+  ],
+  "connections": {
+    "Start - Phone Inbound": { "main": [[{ "node": "Normalize Inbound Call", "type": "main", "index": 0 }]] },
+    "Normalize Inbound Call": { "main": [[{ "node": "Resolve Client Config (Greeting)", "type": "main", "index": 0 }]] },
+    "Resolve Client Config (Greeting)": { "main": [[{ "node": "IF Client Resolved (Greeting)", "type": "main", "index": 0 }]] },
+    "IF Client Resolved (Greeting)": {
+      "main": [
+        [{ "node": "Build Greeting TwiML", "type": "main", "index": 0 }],
+        [{ "node": "Log Unrecognized Number (Greeting)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Unrecognized Number (Greeting)": { "main": [[{ "node": "Build Fallback Greeting", "type": "main", "index": 0 }]] },
+    "Build Fallback Greeting": { "main": [[{ "node": "Respond - Greeting", "type": "main", "index": 0 }]] },
+    "Build Greeting TwiML": { "main": [[{ "node": "Respond - Greeting", "type": "main", "index": 0 }]] },
+    "Handle - Phone Gather": { "main": [[{ "node": "Normalize Gather Event", "type": "main", "index": 0 }]] },
+    "Normalize Gather Event": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "IF Client Resolved (Gather)", "type": "main", "index": 0 }]] },
+    "IF Client Resolved (Gather)": {
+      "main": [
+        [{ "node": "Merge - Gather + Config", "type": "main", "index": 0 }],
+        [{ "node": "Log Unrecognized Number (Gather)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log Unrecognized Number (Gather)": { "main": [[{ "node": "Build Fallback Reply", "type": "main", "index": 0 }]] },
+    "Build Fallback Reply": { "main": [[{ "node": "Respond-Twilio", "type": "main", "index": 0 }]] },
+    "Merge - Gather + Config": { "main": [[{ "node": "Call → Sol Brain", "type": "main", "index": 0 }]] },
+    "Call → Sol Brain": { "main": [[{ "node": "Build - Phone Reply", "type": "main", "index": 0 }]] },
+    "Build - Phone Reply": { "main": [[{ "node": "Build - CRM Event", "type": "main", "index": 0 }]] },
+    "Build - CRM Event": { "main": [[{ "node": "Log to CRM", "type": "main", "index": 0 }]] },
+    "Log to CRM": { "main": [[{ "node": "Respond-Twilio", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

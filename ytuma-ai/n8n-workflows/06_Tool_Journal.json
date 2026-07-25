@@ -1,0 +1,237 @@
+{
+  "name": "06_YTUMA_Tool_Journal",
+  "nodes": [
+    {
+      "id": "j1",
+      "name": "Execute Sub-workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1400, 0],
+      "parameters": {
+        "workflowInputs": { "values": [{ "name": "note_to_add" }, { "name": "user_id" }, { "name": "client_id" }] }
+      }
+    },
+    {
+      "id": "j1b",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1300, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "j1c",
+      "name": "Merge - Note + Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1240, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "note_to_add", "value": "={{ $('Execute Sub-workflow Trigger').item.json.note_to_add }}" },
+            { "name": "user_id", "value": "={{ $('Execute Sub-workflow Trigger').item.json.user_id }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "j2",
+      "name": "IF_Has_Note",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1180, 0],
+      "parameters": {
+        "conditions": {
+          "conditions": [{ "leftValue": "={{ ($json.note_to_add || '').trim() }}", "rightValue": "", "operator": { "type": "string", "operation": "notEquals" } }]
+        }
+      }
+    },
+    {
+      "id": "j3",
+      "name": "Build - Journal Entry",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-960, -80],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "user_id", "value": "={{ $json.user_id || 'anonymous' }}" },
+            { "name": "note_to_add", "value": "={{ ($json.note_to_add || '').trim() }}" },
+            { "name": "entry_text", "value": "={{ $now.toISO() + ' — ' + ($json.user_id || 'anonymous') + ':\\n' + ($json.note_to_add || '').trim() }}" },
+            { "name": "client_id", "value": "={{ $json.client_id }}" },
+            { "name": "journal_doc_id", "value": "={{ $json.journal_doc_id }}" },
+            { "name": "memory_rejections_doc_id", "value": "={{ $json.memory_rejections_doc_id }}" },
+            { "name": "pinecone_namespace", "value": "={{ $json.pinecone_namespace }}" },
+            { "name": "admin_email", "value": "={{ $json.admin_email }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "j4",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [-800, -160],
+      "parameters": {},
+      "credentials": { "openAiApi": { "id": "OPENAI_API", "name": "OpenAI account" } }
+    },
+    {
+      "id": "j5",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1.1,
+      "position": [-800, -40],
+      "parameters": {
+        "jsonData": "={{ $json.entry_text }}",
+        "options": { "metadata": { "metadataValues": [
+          { "name": "user_id", "value": "={{ $json.user_id }}" },
+          { "name": "source", "value": "profile_journal" },
+          { "name": "created_at", "value": "={{ $now.toISO() }}" }
+        ] } }
+      }
+    },
+    {
+      "id": "j6",
+      "name": "Pinecone Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [-720, -80],
+      "parameters": { "mode": "insert", "pineconeIndex": { "value": "ytuma-memory-v3" }, "options": { "pineconeNamespace": "={{ $json.pinecone_namespace }}" } },
+      "credentials": { "pineconeApi": { "id": "PINECONE_API", "name": "Pinecone account" } }
+    },
+    {
+      "id": "j7",
+      "name": "Get Current Journal",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [-560, -80],
+      "parameters": {
+        "operation": "get",
+        "documentURL": "={{ 'https://docs.google.com/document/d/' + $json.journal_doc_id + '/edit' }}"
+      },
+      "credentials": { "googleDocsOAuth2Api": { "id": "GOOGLE_DOCS_OAUTH", "name": "Google Docs account" } }
+    },
+    {
+      "id": "j8",
+      "name": "content",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-400, -80],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "content", "value": "={{ $json.body && $json.body.content ? $json.body.content + '\\n\\n' + $('Build - Journal Entry').item.json.note_to_add : $('Build - Journal Entry').item.json.note_to_add }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "j9",
+      "name": "Update a document",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [-220, -80],
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ 'https://docs.google.com/document/d/' + $('Build - Journal Entry').item.json.journal_doc_id + '/edit' }}",
+        "actionsUi": { "actionFields": [{ "action": "insert", "text": "={{ $json.content }}" }] }
+      },
+      "credentials": { "googleDocsOAuth2Api": { "id": "GOOGLE_DOCS_OAUTH", "name": "Google Docs account" } }
+    },
+    {
+      "id": "j10",
+      "name": "Log_Empty_Memory_Attempt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-960, 100],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "event", "value": "memory_skip" },
+            { "name": "reason", "value": "blank_or_missing_note_to_add" },
+            { "name": "timestamp", "value": "={{ $now.toISO() }}" },
+            { "name": "user_id", "value": "={{ $json.user_id || 'anonymous' }}" },
+            { "name": "raw_payload", "value": "={{ JSON.stringify($json) }}" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "j11",
+      "name": "Append_Empty_Memory_Log",
+      "type": "n8n-nodes-base.googleDocs",
+      "typeVersion": 2,
+      "position": [-760, 100],
+      "parameters": {
+        "operation": "update",
+        "documentURL": "={{ 'https://docs.google.com/document/d/' + $json.memory_rejections_doc_id + '/edit' }}",
+        "actionsUi": { "actionFields": [{ "action": "insert", "text": "={{ ($json.timestamp || $now.toISO()) + ' | ' + ($json.client_id || 'unknown_client') + ' | ' + ($json.user_id || 'anonymous') + ' | ' + ($json.reason || 'no_reason') + '\\n' }}" }] }
+      },
+      "credentials": { "googleDocsOAuth2Api": { "id": "GOOGLE_DOCS_OAUTH", "name": "Google Docs account" } }
+    },
+    {
+      "id": "j12",
+      "name": "Count_Empty_Attempts_1h",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-560, 100],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const data = this.getWorkflowStaticData('global');\n// Namespaced per client so one tenant's misbehaving bot doesn't trip an alert threshold\n// that's actually about a completely different client's traffic.\nconst clientId = $json.client_id || 'unknown_client';\nconst now = Date.now();\nif (!data.emptyMemoryHitsByClient) data.emptyMemoryHitsByClient = {};\nif (!data.emptyMemoryHitsByClient[clientId]) data.emptyMemoryHitsByClient[clientId] = [];\ndata.emptyMemoryHitsByClient[clientId] = data.emptyMemoryHitsByClient[clientId].filter(ts => now - ts < 60 * 60 * 1000);\ndata.emptyMemoryHitsByClient[clientId].push(now);\nconst empty_hits_last_hour = data.emptyMemoryHitsByClient[clientId].length;\nreturn [{ json: { ...$json, empty_hits_last_hour, alert_needed: empty_hits_last_hour >= 20 } }];"
+      }
+    },
+    {
+      "id": "j13",
+      "name": "IF_TooMany_Empty",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-360, 100],
+      "parameters": {
+        "conditions": { "conditions": [{ "leftValue": "={{ $json.alert_needed }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] }
+      }
+    },
+    {
+      "id": "j14",
+      "name": "Alert_Admin_TooManyEmptyNotes",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [-160, 60],
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.admin_email }}",
+        "subject": "=YTUMA Alert [{{ $json.client_id }}]: too many empty memory attempts",
+        "message": "={{ $json.empty_hits_last_hour }} empty memory attempts in the last hour for client {{ $json.client_id }}. Last: user_id={{ $json.user_id }}, reason={{ $json.reason }}."
+      },
+      "credentials": { "gmailOAuth2": { "id": "GMAIL_OAUTH", "name": "Gmail account" } }
+    }
+  ],
+  "connections": {
+    "Execute Sub-workflow Trigger": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": { "main": [[{ "node": "Merge - Note + Config", "type": "main", "index": 0 }]] },
+    "Merge - Note + Config": { "main": [[{ "node": "IF_Has_Note", "type": "main", "index": 0 }]] },
+    "IF_Has_Note": {
+      "main": [
+        [{ "node": "Build - Journal Entry", "type": "main", "index": 0 }],
+        [{ "node": "Log_Empty_Memory_Attempt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build - Journal Entry": { "main": [[{ "node": "Pinecone Vector Store", "type": "main", "index": 0 }]] },
+    "Embeddings OpenAI": { "ai_embedding": [[{ "node": "Pinecone Vector Store", "type": "ai_embedding", "index": 0 }]] },
+    "Default Data Loader": { "ai_document": [[{ "node": "Pinecone Vector Store", "type": "ai_document", "index": 0 }]] },
+    "Pinecone Vector Store": { "main": [[{ "node": "Get Current Journal", "type": "main", "index": 0 }]] },
+    "Get Current Journal": { "main": [[{ "node": "content", "type": "main", "index": 0 }]] },
+    "content": { "main": [[{ "node": "Update a document", "type": "main", "index": 0 }]] },
+    "Log_Empty_Memory_Attempt": { "main": [[{ "node": "Append_Empty_Memory_Log", "type": "main", "index": 0 }]] },
+    "Append_Empty_Memory_Log": { "main": [[{ "node": "Count_Empty_Attempts_1h", "type": "main", "index": 0 }]] },
+    "Count_Empty_Attempts_1h": { "main": [[{ "node": "IF_TooMany_Empty", "type": "main", "index": 0 }]] },
+    "IF_TooMany_Empty": { "main": [[{ "node": "Alert_Admin_TooManyEmptyNotes", "type": "main", "index": 0 }], []] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

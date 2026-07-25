@@ -1,0 +1,352 @@
+{
+  "name": "02_YTUMA_Brain",
+  "nodes": [
+    {
+      "id": "b1",
+      "name": "02_Brain_Start",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-1600, 0],
+      "parameters": {
+        "workflowInputs": {
+          "values": [
+            { "name": "prompt" },
+            { "name": "user_id" },
+            { "name": "source" },
+            { "name": "client_id" },
+            { "name": "meta" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "b0",
+      "name": "Resolve Client Config",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-1500, 0],
+      "parameters": {
+        "workflowId": { "value": "00_YTUMA_Client_Registry", "cachedResultName": "00_YTUMA_Client_Registry" },
+        "workflowInputs": { "value": { "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      },
+      "notes": "Resolves every per-client resource ID (calendar, sheets, docs, Pinecone namespace, Drive file IDs) in one lookup so nothing below has to hardcode a tenant."
+    },
+    {
+      "id": "b2",
+      "name": "Read - alex_profile",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1360, -300],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.alex_profile_file_id }}" },
+        "options": { "binaryPropertyName": "data" }
+      },
+      "notesInFlow": true,
+      "notes": "File ID comes from the Client Registry lookup - per-client, not hardcoded."
+    },
+    {
+      "id": "b2x",
+      "name": "Extract Text - alex_profile",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -300],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b2r",
+      "name": "Rename - alex_profile",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -300],
+      "parameters": { "assignments": { "assignments": [{ "name": "alex_profile", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
+    },
+    {
+      "id": "b3",
+      "name": "Read - preferences",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1360, -180],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.preferences_file_id }}" },
+        "options": { "binaryPropertyName": "data" }
+      }
+    },
+    {
+      "id": "b3x",
+      "name": "Extract Text - preferences",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -180],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b3r",
+      "name": "Rename - preferences",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -180],
+      "parameters": { "assignments": { "assignments": [{ "name": "preferences", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
+    },
+    {
+      "id": "b4",
+      "name": "Read - patterns",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1360, -60],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.patterns_file_id }}" },
+        "options": { "binaryPropertyName": "data" }
+      }
+    },
+    {
+      "id": "b4x",
+      "name": "Extract Text - patterns",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, -60],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b4r",
+      "name": "Rename - patterns",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, -60],
+      "parameters": { "assignments": { "assignments": [{ "name": "patterns", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
+    },
+    {
+      "id": "b5",
+      "name": "Read - memory_log",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1360, 60],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.memory_log_file_id }}" },
+        "options": { "binaryPropertyName": "data" }
+      }
+    },
+    {
+      "id": "b5x",
+      "name": "Extract Text - memory_log",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, 60],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b5r",
+      "name": "Rename - memory_log",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, 60],
+      "parameters": { "assignments": { "assignments": [{ "name": "memory_log", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
+    },
+    {
+      "id": "b6",
+      "name": "Read - sol_learnings",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [-1360, 180],
+      "parameters": {
+        "operation": "download",
+        "fileId": { "value": "={{ $json.sol_learnings_file_id }}" },
+        "options": { "binaryPropertyName": "data" }
+      }
+    },
+    {
+      "id": "b6x",
+      "name": "Extract Text - sol_learnings",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [-1240, 180],
+      "parameters": { "operation": "text", "binaryPropertyName": "data", "destinationKey": "text" }
+    },
+    {
+      "id": "b6r",
+      "name": "Rename - sol_learnings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-1120, 180],
+      "parameters": { "assignments": { "assignments": [{ "name": "sol_learnings", "value": "={{ $json.text }}" }] }, "options": { "keepOnlySet": true } }
+    },
+    {
+      "id": "b7",
+      "name": "Merge_Profile_Docs",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.1,
+      "position": [-980, -60],
+      "parameters": { "mode": "combine", "combinationMode": "mergeByPosition", "numberInputs": 5 },
+      "notes": "Combine-by-position merges the 5 single-item branches into one item carrying all 5 named fields (alex_profile, preferences, patterns, memory_log, sol_learnings)."
+    },
+    {
+      "id": "b8",
+      "name": "Build - System Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-900, 0],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Pulls the trigger item (prompt/user_id/source/meta) which is item 0 from 02_Brain_Start\nconst trigger = $('02_Brain_Start').first().json;\n// Pulls the resolved per-client config (calendar/sheet/doc IDs, Pinecone namespace, etc.)\nconst config = $('Resolve Client Config').first().json;\nconst now = new Date();\n\n// $json here is the single merged item out of Merge_Profile_Docs, carrying all 5\n// named fields written by the Rename - * nodes. Falls back gracefully if a Drive\n// file ID hasn't been wired yet so the workflow still runs during setup.\nconst alexProfile = $json.alex_profile || '(profile not loaded)';\nconst preferences = $json.preferences || '(preferences not loaded)';\nconst patterns = $json.patterns || '(patterns not loaded)';\nconst memoryLog = $json.memory_log || '(memory log not loaded)';\nconst solLearnings = $json.sol_learnings || '(learnings not loaded)';\n\nconst system_message = `\nDATE & TIME: ${now.toISOString()}\nCLIENT: ${config.client_name || config.client_id}\n\nUSER CORE PROFILE:\n${alexProfile}\n\nUSER PREFERENCES:\n${preferences}\n\nOBSERVED PATTERNS:\n${patterns}\n\nMEMORY LOG (RECENT FACTS):\n${memoryLog}\n\nSOL INTERNAL JOURNAL:\n${solLearnings}\n\nPROTOCOL:\n- You are Sol, a bilingual (English/Spanish) AI executive assistant for ${config.client_name || 'this business'}.\n- Use the knowledge_base tool before answering questions about internal docs, pricing, or process.\n- Use the calendar tool for anything scheduling-related. Never guess availability.\n- Use update_profile to save durable new facts about the user (not small talk).\n- Match the user's language (English/Spanish/Spanglish), defaulting to ${config.preferred_language || 'en'}.\n- Keep phone/voice replies short, natural, and professional. No markdown in voice replies.\n- Never fabricate calendar events, contacts, or emails. If a tool fails, say so plainly.\n- This conversation belongs to exactly one client tenant. Never reference, compare, or leak details from any other client.\n\nSource: ${trigger.source || 'unknown'}\nModeration flagged: ${trigger.meta && trigger.meta.moderation_flagged}\nRate limited: ${trigger.meta && trigger.meta.rate_limited}\n`.trim();\n\nreturn [{ json: { system_message, prompt: trigger.prompt, user_id: trigger.user_id, source: trigger.source, client_id: config.client_id, pinecone_namespace: config.pinecone_namespace } }];"
+      }
+    },
+    {
+      "id": "b9",
+      "name": "Model - GPT-4o",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [-700, 260],
+      "parameters": { "model": "gpt-4o", "options": {} },
+      "credentials": { "openAiApi": { "id": "OPENAI_API", "name": "OpenAI account" } }
+    },
+    {
+      "id": "b10",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1.2,
+      "position": [-560, 320],
+      "parameters": {},
+      "credentials": { "openAiApi": { "id": "OPENAI_API", "name": "OpenAI account" } }
+    },
+    {
+      "id": "b11",
+      "name": "knowledge_base",
+      "type": "@n8n/n8n-nodes-langchain.vectorStorePinecone",
+      "typeVersion": 1.3,
+      "position": [-560, 200],
+      "parameters": {
+        "mode": "retrieve-as-tool",
+        "pineconeIndex": { "value": "ytuma-knowledge-base" },
+        "options": { "pineconeNamespace": "={{ $('Build - System Message').item.json.pinecone_namespace }}" },
+        "toolDescription": "Search this client's own knowledge base for docs, pricing, and process info.",
+        "topK": 5
+      },
+      "notes": "Namespace scopes retrieval to this client only - one shared Pinecone index, hard-isolated by namespace per tenant.",
+      "credentials": { "pineconeApi": { "id": "PINECONE_API", "name": "Pinecone account" } }
+    },
+    {
+      "id": "b12",
+      "name": "Call '03_YTUMA_Tool_Calendar'",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.1,
+      "position": [-420, 260],
+      "parameters": {
+        "name": "calendar_tool",
+        "description": "Call this to schedule meetings, add events, or check availability. Provide JSON with action ('add_event'|'check_availability'), summary, start_time, end_time.",
+        "workflowId": { "value": "03_YTUMA_Tool_Calendar", "cachedResultName": "03_YTUMA_Tool_Calendar" },
+        "workflowInputs": {
+          "value": {
+            "action": "={{ $fromAI('action', 'add_event or check_availability', 'string') }}",
+            "summary": "={{ $fromAI('summary', 'Event title, required for add_event', 'string') }}",
+            "start_time": "={{ $fromAI('start_time', 'ISO 8601 start time', 'string') }}",
+            "end_time": "={{ $fromAI('end_time', 'ISO 8601 end time', 'string') }}",
+            "client_id": "={{ $('Build - System Message').item.json.client_id }}"
+          }
+        }
+      },
+      "notes": "client_id is injected from the actual request context, never left for the model to fill in - a client's assistant can only ever touch its own calendar."
+    },
+    {
+      "id": "b13",
+      "name": "update_profile",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.1,
+      "position": [-280, 320],
+      "parameters": {
+        "name": "update_profile",
+        "description": "Call this to save new durable facts about the user to their long-term journal. Provide note_to_add.",
+        "workflowId": { "value": "06_YTUMA_Tool_Journal", "cachedResultName": "06_YTUMA_Tool_Journal" },
+        "workflowInputs": {
+          "value": {
+            "note_to_add": "={{ $fromAI('note_to_add', 'The durable fact to remember', 'string') }}",
+            "user_id": "={{ $('Build - System Message').item.json.user_id }}",
+            "client_id": "={{ $('Build - System Message').item.json.client_id }}"
+          }
+        }
+      },
+      "notes": "client_id and user_id come from the request context, not the model - the journal can never be pointed at the wrong client's Doc/Pinecone namespace."
+    },
+    {
+      "id": "b14",
+      "name": "Memory_ST",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.3,
+      "position": [-140, 260],
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ ($('Build - System Message').item.json.client_id || 'unknown_client') + ':' + ($json.user_id || 'anonymous') }}",
+        "contextWindowLength": 8
+      }
+    },
+    {
+      "id": "b15",
+      "name": "AI - SOL YTUMA Executive",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.9,
+      "position": [-660, 0],
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.prompt }}",
+        "options": { "systemMessage": "={{ $json.system_message }}" }
+      }
+    },
+    {
+      "id": "b16",
+      "name": "Format - Final Output",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-420, 0],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "success", "type": "boolean", "value": true },
+            { "name": "output", "value": "={{ $json.output }}" },
+            { "name": "meta", "value": "={{ { user_id: $('Build - System Message').item.json.user_id, source: $('Build - System Message').item.json.source, client_id: $('Build - System Message').item.json.client_id, model: 'gpt-4o', from_workflow: '02_YTUMA_Brain', timestamp: $now.toISO() } }}" }
+          ]
+        }
+      }
+    }
+  ],
+  "connections": {
+    "02_Brain_Start": { "main": [[{ "node": "Resolve Client Config", "type": "main", "index": 0 }]] },
+    "Resolve Client Config": {
+      "main": [[
+        { "node": "Read - alex_profile", "type": "main", "index": 0 },
+        { "node": "Read - preferences", "type": "main", "index": 0 },
+        { "node": "Read - patterns", "type": "main", "index": 0 },
+        { "node": "Read - memory_log", "type": "main", "index": 0 },
+        { "node": "Read - sol_learnings", "type": "main", "index": 0 }
+      ]]
+    },
+    "Read - alex_profile": { "main": [[{ "node": "Extract Text - alex_profile", "type": "main", "index": 0 }]] },
+    "Extract Text - alex_profile": { "main": [[{ "node": "Rename - alex_profile", "type": "main", "index": 0 }]] },
+    "Rename - alex_profile": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 0 }]] },
+    "Read - preferences": { "main": [[{ "node": "Extract Text - preferences", "type": "main", "index": 0 }]] },
+    "Extract Text - preferences": { "main": [[{ "node": "Rename - preferences", "type": "main", "index": 0 }]] },
+    "Rename - preferences": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 1 }]] },
+    "Read - patterns": { "main": [[{ "node": "Extract Text - patterns", "type": "main", "index": 0 }]] },
+    "Extract Text - patterns": { "main": [[{ "node": "Rename - patterns", "type": "main", "index": 0 }]] },
+    "Rename - patterns": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 2 }]] },
+    "Read - memory_log": { "main": [[{ "node": "Extract Text - memory_log", "type": "main", "index": 0 }]] },
+    "Extract Text - memory_log": { "main": [[{ "node": "Rename - memory_log", "type": "main", "index": 0 }]] },
+    "Rename - memory_log": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 3 }]] },
+    "Read - sol_learnings": { "main": [[{ "node": "Extract Text - sol_learnings", "type": "main", "index": 0 }]] },
+    "Extract Text - sol_learnings": { "main": [[{ "node": "Rename - sol_learnings", "type": "main", "index": 0 }]] },
+    "Rename - sol_learnings": { "main": [[{ "node": "Merge_Profile_Docs", "type": "main", "index": 4 }]] },
+    "Merge_Profile_Docs": { "main": [[{ "node": "Build - System Message", "type": "main", "index": 0 }]] },
+    "Build - System Message": { "main": [[{ "node": "AI - SOL YTUMA Executive", "type": "main", "index": 0 }]] },
+    "Model - GPT-4o": { "ai_languageModel": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_languageModel", "index": 0 }]] },
+    "Embeddings OpenAI": { "ai_embedding": [[{ "node": "knowledge_base", "type": "ai_embedding", "index": 0 }]] },
+    "knowledge_base": { "ai_tool": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_tool", "index": 0 }]] },
+    "Call '03_YTUMA_Tool_Calendar'": { "ai_tool": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_tool", "index": 0 }]] },
+    "update_profile": { "ai_tool": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_tool", "index": 0 }]] },
+    "Memory_ST": { "ai_memory": [[{ "node": "AI - SOL YTUMA Executive", "type": "ai_memory", "index": 0 }]] },
+    "AI - SOL YTUMA Executive": { "main": [[{ "node": "Format - Final Output", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

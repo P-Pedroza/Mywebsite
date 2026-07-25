@@ -1,0 +1,168 @@
+{
+  "name": "04_YTUMA_Telegram",
+  "nodes": [
+    {
+      "id": "t1",
+      "name": "Start - Telegram Inbound",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [-1500, 0],
+      "parameters": { "updates": ["message"] },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "t2",
+      "name": "IF_Is_Command",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [-1280, 0],
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ ($json.message.text || '').toLowerCase() }}",
+              "rightValue": "^(approve|cancel|edit)",
+              "operator": { "type": "string", "operation": "regex" }
+            }
+          ]
+        }
+      },
+      "notes": "TRUE branch is reserved for CRM/approval command routing (see workflow 11). Wire to Execute Workflow -> 11_Email_Approval_Handler when ready."
+    },
+    {
+      "id": "t3",
+      "name": "Router - Type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [-1040, 60],
+      "parameters": {
+        "rules": {
+          "values": [
+            { "outputKey": "voice", "conditions": { "conditions": [{ "leftValue": "={{ !!$json.message.voice }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } },
+            { "outputKey": "text", "conditions": { "conditions": [{ "leftValue": "={{ !!$json.message.text }}", "rightValue": true, "operator": { "type": "boolean", "operation": "true" } }] } },
+            { "outputKey": "other", "conditions": { "conditions": [] } }
+          ],
+          "fallbackOutput": "other"
+        }
+      }
+    },
+    {
+      "id": "t4",
+      "name": "Format - Text",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-820, -40],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "prompt", "value": "={{ $json.message.text }}" },
+            { "name": "user_id", "value": "={{ 'telegram_' + $json.message.from.id }}" },
+            { "name": "chat_id", "value": "={{ $json.message.chat.id }}" },
+            { "name": "client_id", "value": "YOUR_CLIENT_ID_HERE" }
+          ]
+        }
+      },
+      "notes": "client_id is a FIXED value, not dynamic - each client gets their own bot token and their own copy of this workflow, so this is 'which client's copy is this' baked in once, not looked up per-message."
+    },
+    {
+      "id": "t5",
+      "name": "Get Audio",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-820, 60],
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.message.voice.file_id }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "t6",
+      "name": "Whisper - Transcribe",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1.6,
+      "position": [-620, 60],
+      "parameters": {
+        "resource": "audio",
+        "operation": "transcribe",
+        "binaryPropertyName": "data"
+      },
+      "credentials": { "openAiApi": { "id": "OPENAI_API", "name": "OpenAI account" } }
+    },
+    {
+      "id": "t7",
+      "name": "Format - Voice",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-420, 60],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "name": "prompt", "value": "={{ $json.text }}" },
+            { "name": "user_id", "value": "={{ 'telegram_' + $('Start - Telegram Inbound').item.json.message.from.id }}" },
+            { "name": "chat_id", "value": "={{ $('Start - Telegram Inbound').item.json.message.chat.id }}" },
+            { "name": "client_id", "value": "YOUR_CLIENT_ID_HERE" }
+          ]
+        }
+      }
+    },
+    {
+      "id": "t8",
+      "name": "Send Unsupported Type",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [-820, 200],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.message.chat.id }}",
+        "text": "Right now I only understand text and voice messages.\nMándame un texto o una nota de voz. 🎙️"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    },
+    {
+      "id": "t9",
+      "name": "Call '02_YTUMA_Brain'",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [-200, 0],
+      "parameters": {
+        "workflowId": { "value": "02_YTUMA_Brain", "cachedResultName": "02_YTUMA_Brain" },
+        "workflowInputs": { "value": { "prompt": "={{ $json.prompt }}", "user_id": "={{ $json.user_id }}", "source": "telegram", "client_id": "={{ $json.client_id }}" } },
+        "options": { "waitForSubWorkflow": true }
+      }
+    },
+    {
+      "id": "t10",
+      "name": "Send a text message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [20, 0],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $('Format - Text').item.json.chat_id || $('Format - Voice').item.json.chat_id }}",
+        "text": "={{ $json.output || '🤔 (Brain returned empty output – check 02_YTUMA_Brain prompt.)' }}"
+      },
+      "credentials": { "telegramApi": { "id": "TELEGRAM_BOT_API", "name": "YTUMA Telegram Bot" } }
+    }
+  ],
+  "connections": {
+    "Start - Telegram Inbound": { "main": [[{ "node": "IF_Is_Command", "type": "main", "index": 0 }]] },
+    "IF_Is_Command": { "main": [[], [{ "node": "Router - Type", "type": "main", "index": 0 }]] },
+    "Router - Type": {
+      "main": [
+        [{ "node": "Get Audio", "type": "main", "index": 0 }],
+        [{ "node": "Format - Text", "type": "main", "index": 0 }],
+        [{ "node": "Send Unsupported Type", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format - Text": { "main": [[{ "node": "Call '02_YTUMA_Brain'", "type": "main", "index": 0 }]] },
+    "Get Audio": { "main": [[{ "node": "Whisper - Transcribe", "type": "main", "index": 0 }]] },
+    "Whisper - Transcribe": { "main": [[{ "node": "Format - Voice", "type": "main", "index": 0 }]] },
+    "Format - Voice": { "main": [[{ "node": "Call '02_YTUMA_Brain'", "type": "main", "index": 0 }]] },
+    "Call '02_YTUMA_Brain'": { "main": [[{ "node": "Send a text message", "type": "main", "index": 0 }]] }
+  },
+  "pinData": {},
+  "settings": { "executionOrder": "v1" }
+}

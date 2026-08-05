@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#17221f" />
+    <title>Brick & Borough</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="game" aria-label="Isometric neighborhood game map"></div>
+      <header class="topbar">
+        <button class="brand" id="brand" aria-label="About Brick and Borough">
+          <span class="brand-mark">B<span>&</span>B</span>
+          <span><strong>Brick & Borough</strong><small>REAL ESTATE TYCOON</small></span>
+        </button>
+        <div class="stats" id="stats"></div>
+        <button class="icon-button" id="sound" aria-label="Toggle sound">♪</button>
+      </header>
+      <aside class="objectives" id="objectives"></aside>
+      <aside class="panel" id="panel" aria-live="polite"></aside>
+      <div class="toast" id="toast" role="status"></div>
+      <div class="timebar">
+        <div><small>INDIANAPOLIS · SPRING</small><strong id="date">APR 2026</strong></div>
+        <div class="market"><span id="market-dot"></span> <strong id="market-label">BALANCED MARKET</strong></div>
+        <button id="save">Save game</button>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
